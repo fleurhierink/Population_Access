@@ -16,3 +16,6 @@ The R scripts are made to clip, project and prepare all input data for a geograp
 * Gridded population data: the fetching of some and preparation of several gridded population datasets (R-scripts, 10_download_population_worldpop.R & 11_clip_population.R)
 * Accessibility coverage statistics: calculation of the population covered in several travel time catchments (i.e., 30, 60, 120, 150, and 180 minutes) (R-scripts, 13_extract_coverage_X.R)
 
+## Citation
+The paper in which these scripts have been developed and applied is currently in preparation. 
+
