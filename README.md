@@ -5,16 +5,16 @@ This github page presents the automatized workflow to process all the data for t
 
 ## Contents
 The R scripts are made to clip, project and prepare all input data for a geographic accessibility analysis. In addition it uses code to extract the most recent OpenStreetMap layers. The data preparation includes:
-* Landcover: clipping and projection (R-script, 01_data_prep_landcover.R)
-* Digital Elevation Model: data fetching, clipping, and projecting (R-script, 02_data_prep_dem_download.R & 02_data_prep_dem_process.R)
-* Roads: data fetching and projecting (R-script, 03_data_prep_roads.R)
-* Hydrography: data fetching of line and polygon features (R-script, 04_data_prep_hydro_lines.R & 05_data_prep_hydro_poly.R)
-* Landcover merge: combining all input data in a merged land cover to which a travel scenario can be applied (R-script, 06_data_prep_merge_landcover.R)
-* Friction layer: the transformation of a land cover merge to a friction layer that presents the cost of traversing a cell (R-script, 07_friction_layer.R)
-* Health facility location: clipping point features to countries and projecting (R-script, 08_health_facilities.R)
-* Accessibility analyis: cost-distance algorithm in arcpy that appliesa the eight directional least-cost path to the friction layer overlaid with health facility location (09_accessibility_analysis.py).
-* Gridded population data: the fetching of some and preparation of several gridded population datasets (R-scripts, 10_download_population_worldpop.R & 11_clip_population.R)
-* Accessibility coverage statistics: calculation of the population covered in several travel time catchments (i.e., 30, 60, 120, 150, and 180 minutes) (R-scripts, 13_extract_coverage_X.R)
+* **Landcover**: clipping and projection (R-script, 01_data_prep_landcover.R)
+* **Digital Elevation Model**: data fetching, clipping, and projecting (R-script, 02_data_prep_dem_download.R & 02_data_prep_dem_process.R)
+* **Roads**: data fetching and projecting (R-script, 03_data_prep_roads.R)
+* **Hydrography**: data fetching of line and polygon features (R-script, 04_data_prep_hydro_lines.R & 05_data_prep_hydro_poly.R)
+* **Landcover merge**: combining all input data in a merged land cover to which a travel scenario can be applied (R-script, 06_data_prep_merge_landcover.R)
+* **Friction layer**: the transformation of a land cover merge to a friction layer that presents the cost of traversing a cell (R-script, 07_friction_layer.R)
+* **Health facility location**: clipping point features to countries and projecting (R-script, 08_health_facilities.R)
+* **Accessibility analyis**: cost-distance algorithm in arcpy that appliesa the eight directional least-cost path to the friction layer overlaid with health facility location (09_accessibility_analysis.py).
+* **Gridded population data**: the fetching of some and preparation of several gridded population datasets (R-scripts, 10_download_population_worldpop.R & 11_clip_population.R)
+* **Accessibility coverage statistics**: calculation of the population covered in several travel time catchments (i.e., 30, 60, 120, 150, and 180 minutes) (R-scripts, 13_extract_coverage_X.R)
 
 ## Citation
 The paper in which these scripts have been developed and applied is currently in preparation. Please cite this github page when using code.
