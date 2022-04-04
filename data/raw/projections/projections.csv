@@ -1,0 +1,56 @@
+﻿country_code,country,epsg_code
+AGO,Angola,32733
+BDI,Burundi,32735
+BEN,Benin,32631
+BFA,Burkina Faso,32630
+BWA,Botswana,22235
+CAF,Central African Republic,32634
+CIV,Côte d'Ivoire,32630
+CMR,Cameroon,32633
+COD,Democratic Republic of the Congo,32735
+COG,Republic of Congo,32733
+COM,Comoros,32640
+CPV,Cape Verde,32626
+DJI,Djibouti,32638
+DZA,Algeria,30731
+EGY,Egypt,32635
+ERI,Eritrea,32637
+ESH,Western Sahara,32628
+ETH,Ethiopia,32638
+GAB,Gabon,32732
+GHA,Ghana,32630
+GIN,Guinea,32629
+GMB,Gambia,32628
+GNB,Guinea-Bissau,32628
+GNQ,Equatorial Guinea,32632
+KEN,Kenya,32737
+LBR,Liberia,32629
+LBY,Libya,32633
+LSO,Lesotho,32635
+MAR,Morocco,32629
+MDG,Madagascar,32738
+MLI,Mali,32630
+MOZ,Mozambique,32736
+MRT,Mauritania,32629
+MUS,Mauritius,32640
+MWI,Malawi,32736
+NAM,Namibia,32733
+NER,Niger,32632
+NGA,Nigeria,32632
+RWA,Rwanda,32735
+SDN,Sudan,32635
+SEN,Senegal,32628
+SLE,Sierra Leone,32629
+SOM,Somalia,32638
+SSD,South Sudan,32636
+STP,São Tomé and Príncipe,32632
+SWZ,Swaziland,32636
+SYC,Seychelles,32640
+TCD,Chad,32634
+TGO,Togo,32631
+TUN,Tunisia,32632
+TZA,Tanzania,32736
+UGA,Uganda,32736
+ZAF,South Africa,32735
+ZMB,Zambia,32735
+ZWE,Zimbabwe,32735
