@@ -34,6 +34,13 @@ if (!require("RCurl")) install.packages("RCurl"); library("RCurl")
 if (!require("remotes")) install.packages("remotes"); library("remotes")
 # Access geoboundaries
 if (!require("rgeoboundaries")) remotes::install_github("wmgeolab/rgeoboundaries"); library("rgeoboundaries")
+# Access Zenodo
+if (!require("zen4R")) install.packages("zen4R"); library("zen4R")
+
+# Main parameters --------------------------------------------------------------------------
+urlSRTM <- "https://github.com/sikli/srtm_country/archive/master.zip"
+doiLC <- "10.5281/zenodo.3939050"
+zenodoFileLC <- "PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
 
 # Main functions --------------------------------------------------------------------------
 # Create directories for the project
@@ -64,8 +71,8 @@ project.dir <- function(mainPath,region){
   }
   # Print directory tree
   dir_tree(paste0(mainPath,"/",toupper(region),"/data"))
-  cat("WARNING: Population, DEM, landcover rasters and health facilities shapefile have to be downloaded manually and \ncopied into their respective folders: /data/raw/[variable]")
-  cat("WARNING: Other main inputs can be dowloaded automatically using the download.[variable] functions.")
+  cat("Health facilities shapefile have to be downloaded manually and \ncopied into their respective folders: /data/raw/vFacilities")
+  cat("\nOther inputs can be dowloaded automatically using the download.[variable] functions.")
 }
 
 # Set project main parameters (reference system and resolution)
@@ -196,7 +203,7 @@ download.dem.srtm <- function(mainPath,region){
   # Download SRTM tiles shapefile in a temporary folder
   tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rDEM/temp")
   dir.create(tmpFolder)
-  download.file(url="https://github.com/sikli/srtm_country/archive/master.zip",destfile = paste0(tmpFolder,"/srtm.zip"))
+  download.file(url=urlSRTM,destfile = paste0(tmpFolder,"/srtm.zip"))
   unzip(zipfile=paste0(tmpFolder,"/srtm.zip"),overwrite=TRUE,exdir=tmpFolder)
   shp <- shapefile(paste0(tmpFolder,"/srtm_country-master/srtm/tiles.shp"))
   #Intersect country geometry with tile grid
@@ -281,12 +288,35 @@ download.population <- function(mainPath,region){
     }else{
       for(i in selInd){
         filePath <- paste0(pathFTP,folderLst[i])
-        download.file(url=filePath,destfile=paste0(pathFolder,"/",folderLst[i]),quiet=FALSE,mode="a")
+        download.file(url=filePath,destfile=paste0(pathFolder,"/",folderLst[i]),quiet=FALSE,mode = "wb")
         cat(paste0(pathFolder,"/",folderLst[i]))
       }
       downloadProcess <- FALSE
     }
   }
+}
+
+# Download land cover
+download.landcover <- function(mainPath,region){
+  # Check directory
+  pathLandcover <- paste0(mainPath,"/",toupper(region),"/data/raw/rLandcover")
+  if(!dir.exists(pathLandcover)){
+    stop(paste(pathLandcover,"does not exist. Run the project.dir function first or check the input parameters."))
+  }
+  if(!file.exists(paste0(mainPath,"/",toupper(region),"/data/raw/vZones/vZones_r.shp"))){
+    stop("Administrative boundaries shapefile is missing. Run the download.zones.geoboundaries function.")
+  }
+  # Download SRTM tiles shapefile in a temporary folder
+  tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rLandcover/temp")
+  dir.create(tmpFolder)
+  download_zenodo(doi=doiLC,path=tmpFolder,files=zenodoFileLC)
+  globalLandcover <- rast(paste0(tmpFolder,"/",zenodoFileLC))
+  pathBound <- paste0(mainPath,"/",toupper(region),"/data/raw/vZones")
+  bound <- paste0(pathBound,"/vZones_r.shp")
+  cropLandcover <- terra::crop(globalLandcover,bound)
+  writeRaster(cropLandcover,paste0(pathLandcover,"/rLandcover_r.tif"),overwrite=TRUE)
+  unlink(tmpFolder,recursive=TRUE)
+  cat(paste0(pathLandcover,"/rLandcover_r.tif"))
 }
 
 # Subset based on categories for automatically downloaded shapefiles
@@ -341,6 +371,7 @@ downlad.osm <- function(x,mainPath,region){
 }
 
 
+# Example --------------------------------------------------
 
 mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS"
 region <- "Afghanistan"
@@ -348,6 +379,7 @@ project.dir(mainPath,region)
 set.param(mainPath,region,"AFG",3642,100)
 download.zones.geoboundaries(mainPath,region,1)
 download.dem.srtm(mainPath,region)
+download.landcover(mainPath,region)
 download.population(mainPath,region)
 downlad.osm("waterPoly",mainPath,region)
 downlad.osm("waterLines",mainPath,region)
