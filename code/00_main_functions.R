@@ -35,7 +35,7 @@ if (!require("remotes")) install.packages("remotes"); library("remotes")
 # Access geoboundaries
 if (!require("rgeoboundaries")) remotes::install_github("wmgeolab/rgeoboundaries"); library("rgeoboundaries")
 # Access Zenodo
-if (!require("zen4R")) install.packages("zen4R"); library("zen4R")
+if (!require("zen4R")) install_github("eblondel/zen4R"); library("zen4R")
 
 # Main parameters --------------------------------------------------------------------------
 urlSRTM <- "https://github.com/sikli/srtm_country/archive/master.zip"
@@ -71,7 +71,7 @@ project.dir <- function(mainPath,region){
   }
   # Print directory tree
   dir_tree(paste0(mainPath,"/",toupper(region),"/data"))
-  cat("Health facilities shapefile have to be downloaded manually and \ncopied into their respective folders: /data/raw/vFacilities")
+  cat("Health facilities shapefile have to be downloaded manually and copied into their respective folders: /data/raw/vFacilities")
   cat("\nOther inputs can be dowloaded automatically using the download.[variable] functions.")
 }
 
@@ -137,12 +137,13 @@ download.zones.geoboundaries <- function(mainPath,region,adminLevel){
   # Download the data
   bound <- geoboundaries(iso,adm_lvl=adminLevel,quiet=FALSE,)
   boundMeta <- gb_metadata(iso,adm_lvl=adminLevel)
+  
   write.lonlat(bound,pathBound)
   # Save metadata
-  write.table(boundMeta,paste0(pathBound,"/metadata.txt"))
+  write.table(boundMeta,paste0(pathBound,"/",boundMeta$boundaryID,".txt"))
   # Save shapefile
-  st_write(bound,paste0(pathBound,"/vZones_r.shp"),append=F)
-  cat(paste0(pathBound,"/vZones_r.shp"))
+  st_write(bound,paste0(pathBound,"/",boundMeta$boundaryID,".shp"),append=F)
+  cat(paste0(pathBound,"/",boundMeta$boundaryID,".shp"))
 }
 
 # Download administrative boundaries (NOT recommended)
@@ -188,6 +189,27 @@ get.lonlat <- function(mainPath,region){
   return(list(lon,lat))
 }
 
+get.boundaries <- function(mainPath,region){
+  # Check directory
+  pathBound <- paste0(mainPath,"/",toupper(region),"/data/raw/vZones")
+  if(!dir.exists(pathBound)){
+    stop(paste(pathBound,"does not exist. Run the project.dir function first or check the input parameters."))
+  }
+  vZonesFolder <- list.files(pathBound)
+  vZonesShp <- grepl(".shp",vZonesFolder)
+  if(sum(vZonesShp)==0){
+    stop("Administrative boundaries shapefile is missing. Run the download.zones.geoboundaries function.")
+  }else if(sum(vZonesShp)>1){
+    selectedIndex <- menu(vZonesFolder[vZonesShp],title="\nSelect the shapefile you will use for boundaries ?")
+    shp <- vZonesFolder[vZonesShp][selectedIndex]
+    bound <- readOGR(paste0(pathBound,"/",shp))
+    return(bound)
+  }else{
+    bound <- readOGR(paste0(pathBound,"/",vZonesFolder[vZonesShp]))
+    return(bound)
+  }
+}
+
 # Download DEM from SRTM (FABDEM only can be accessed through their website)
 download.dem.srtm <- function(mainPath,region){
   # Check directory
@@ -195,11 +217,7 @@ download.dem.srtm <- function(mainPath,region){
   if(!dir.exists(pathDEM)){
     stop(paste(pathDEM,"does not exist. Run the project.dir function first or check the input parameters."))
   }
-  if(!file.exists(paste0(mainPath,"/",toupper(region),"/data/raw/vZones/vZones_r.shp"))){
-    stop("Administrative boundaries shapefile is missing. Run the download.zones.geoboundaries function.")
-  }else{
-    bound <- readOGR(paste0(pathBound,"/vZones_r.shp"))
-  }
+  bound <- get.boundaries(mainPath,region)
   # Download SRTM tiles shapefile in a temporary folder
   tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rDEM/temp")
   dir.create(tmpFolder)
@@ -220,10 +238,9 @@ download.dem.srtm <- function(mainPath,region){
   # Mosaic
   srtmList$fun <- mean 
   srtmMosaic   <- do.call(mosaic, srtmList)
-  srtmMosaic
-  writeRaster(srtmMosaic,paste0(pathDEM,"/rDEM_r.tif"))
+  writeRaster(srtmMosaic,paste0(pathDEM,"/srtm.tif"))
   unlink(tmpFolder,recursive=TRUE)
-  cat(paste0(pathDEM,"/rDEM_r.tif"))
+  cat(paste0(pathDEM,"/srtm.tif"))
 }
 
 # Search in FTP folders
@@ -303,20 +320,16 @@ download.landcover <- function(mainPath,region){
   if(!dir.exists(pathLandcover)){
     stop(paste(pathLandcover,"does not exist. Run the project.dir function first or check the input parameters."))
   }
-  if(!file.exists(paste0(mainPath,"/",toupper(region),"/data/raw/vZones/vZones_r.shp"))){
-    stop("Administrative boundaries shapefile is missing. Run the download.zones.geoboundaries function.")
-  }
+  bound <- get.boundaries(mainPath,region)
   # Download SRTM tiles shapefile in a temporary folder
   tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rLandcover/temp")
   dir.create(tmpFolder)
   download_zenodo(doi=doiLC,path=tmpFolder,files=zenodoFileLC)
   globalLandcover <- rast(paste0(tmpFolder,"/",zenodoFileLC))
-  pathBound <- paste0(mainPath,"/",toupper(region),"/data/raw/vZones")
-  bound <- paste0(pathBound,"/vZones_r.shp")
   cropLandcover <- terra::crop(globalLandcover,bound)
-  writeRaster(cropLandcover,paste0(pathLandcover,"/rLandcover_r.tif"),overwrite=TRUE)
+  writeRaster(cropLandcover,paste0(pathLandcover,"/",zenodoFileLC,".tif"),overwrite=TRUE)
   unlink(tmpFolder,recursive=TRUE)
-  cat(paste0(pathLandcover,"/rLandcover_r.tif"))
+  cat(paste0(pathLandcover,"/",zenodoFileLC,".tif"))
 }
 
 # Subset based on categories for automatically downloaded shapefiles
@@ -365,9 +378,10 @@ downlad.osm <- function(x,mainPath,region){
                 force_download = TRUE)
   
   shp <- select.categories(shp,colName)
-  st_write(shp,paste0(pathFolder,"/v",str_to_title(x),"_r.shp"),append=FALSE) # Save the layer
+  shapeName <- gsub(".gpkg","",list.files(pathFolder)[grepl("*.gpkg",list.files(pathFolder))])
+  st_write(shp,paste0(pathFolder,"/v",str_to_title(x),"_",shapeName,".shp"),append=FALSE) # Save the layer
   file.remove(paste0(pathFolder,"/",list.files(pathFolder)[grepl("*.gpkg|*.pbf",list.files(pathFolder))]))
-  cat(paste0(pathFolder,"/v",str_to_title(x),"_r.shp"))
+  cat(paste0(pathFolder,"/v",str_to_title(x),"_",shapeName,".shp"))
 }
 
 
@@ -379,8 +393,8 @@ project.dir(mainPath,region)
 set.param(mainPath,region,"AFG",3642,100)
 download.zones.geoboundaries(mainPath,region,1)
 download.dem.srtm(mainPath,region)
-download.landcover(mainPath,region)
 download.population(mainPath,region)
+download.landcover(mainPath,region)
 downlad.osm("waterPoly",mainPath,region)
 downlad.osm("waterLines",mainPath,region)
 downlad.osm("roads",mainPath,region)
