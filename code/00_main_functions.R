@@ -15,6 +15,8 @@ if (!require("osmextract")) install.packages("osmextract"); library("osmextract"
 # Underlying support for spatial analysis
 if (!require("rgdal")) install.packages("rgdal"); library("rgdal")
 # Underlying support for spatial analysis
+if (!require("gdalUtils")) install.packages("gdalUtilsg"); library("gdalUtils")
+# Underlying support for spatial analysis
 if (!require("rgeos")) install.packages("rgeos"); library("rgeos")
 # Zonal statistics
 if (!require("exactextractr")) install.packages("exactextractr"); library("exactextractr")
@@ -36,21 +38,47 @@ if (!require("remotes")) install.packages("remotes"); library("remotes")
 if (!require("rgeoboundaries")) remotes::install_github("wmgeolab/rgeoboundaries"); library("rgeoboundaries")
 # Access Zenodo
 if (!require("zen4R")) install_github("eblondel/zen4R"); library("zen4R")
+# Get suggestion of projection based on a shapefile
+if (!require("crsuggest")) install.packages("crsuggest"); library("crsuggest")
+# Get ISO code
+if (!require("countrycode")) install.packages("countrycode"); library("countrycode")
+# Remove accent for country names
+if (!require("stringi")) install.packages("stringi"); library("stringi")
 
 # Main parameters --------------------------------------------------------------------------
 urlSRTM <- "https://github.com/sikli/srtm_country/archive/master.zip"
-doiLC <- "10.5281/zenodo.3939050"
-zenodoFileLC <- "PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
-
+# doiLC <- "10.5281/zenodo.3939050"
+# zenodoFileLC <- "PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
+awsLCFolder <- "https://s3-eu-west-1.amazonaws.com/vito.landcover.global/v3.0.1/2019/"
+awsLCSuffix <- "_PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif"
 
 # Main functions --------------------------------------------------------------------------
 # Create directories for the project
 # Warnings are displayed if the folders already exist, and these are not erased
 # Default variables are set for the data input names
-project.dir <- function(mainPath,region){
+initiate.project <- function(mainPath){
   if(!dir.exists(mainPath)){
     stop("Main folder path does not exist.")
   }
+  countryLst <- codelist$country.name.en[!is.na(codelist$un.name.en)]
+  countryInd <- menu(countryLst,title="Select the country",graphics=TRUE)
+  if(countryInd==0){
+    stop("You exit the script.")
+  }
+  
+  regionOriginalName <- countryLst[countryInd]
+  iso3 <- as.character(codelist[codelist$country.name.en==regionOriginalName,"iso3c"])
+  
+  region <- gsub(" \\(.*\\)|\\(.*\\)","",regionOriginalName)
+  region <- gsub("[^[[:alnum:]]"," ",region)
+  region <- str_squish(region)
+  region <- gsub("[[:space:]]","_",region)
+  region <- stri_trans_general(str=region, id = "Latin-ASCII")
+  
+  # region <- gsub("'"," ","d'sd")
+  # region <- gsub("[^[:alnum:][:space:]]","",region)
+  # region <- gsub("[[:space:]]","_",region)
+  
   # Main standard inputs
   inputNames=c("rDEM","rPopulation","rLandcover","vRoads","vWaterLines","vWaterPolygons","vBorders","vFacilities")
   message(paste("\nThe following input folders will be created:",paste(inputNames,collapse=", ")))
@@ -70,30 +98,21 @@ project.dir <- function(mainPath,region){
       dir.create(paste0(pathData,"/",type,"/",inputName))
     }
   }
-  # Print directory tree
-  dir_tree(paste0(mainPath,"/",toupper(region),"/data"))
-  cat("Health facilities shapefile have to be downloaded manually and copied into their respective folders: /data/raw/vFacilities")
-  cat("\nOther inputs can be dowloaded automatically using the download.[variable] functions.")
-}
-
-# Set project main parameters (reference system and resolution)
-set.param <- function(mainPath,region,iso3,epsg){
-  pathRegion <- paste0(mainPath,"/",toupper(region),"/data")
-  if(!dir.exists(pathRegion)){
-    stop(paste(pathRegion,"does not exist. Run the project.dir function."))
-  }
+  pathRegion <- paste0(mainPath,"/",region,"/data")
   fileConn <- file(paste0(pathRegion,"/config.txt"))
-  writeLines(c(paste0("ISO:",iso3),paste0("EPSG:",epsg)), fileConn)
+  writeLines(c(paste0("COUNTRY:",regionOriginalName),paste0("ISO:",iso3)), fileConn)
   close(fileConn)
-  cat("Project parameters are set.")
+  # Print directory tree
+  dir_tree(paste0(mainPath,"/",region,"/data"))
+  cat("\nNow run the download.border.geoboundaries function in order to get the administrative boundaries shapefile.\n")
 }
 
-# Access config.txt (created with set.param) and ISO code
+# Access config.txt (created with initiate.project)
 # Used in other functions
 get.iso <- function(mainPath,region){
   pathRegion <- paste0(mainPath,"/",region,"/data")
   if(!file.exists(paste0(pathRegion,"/config.txt"))){
-    stop("Project main parameters have not been set yet. Run the set.param function.")
+    stop("Project main parameters have not been set yet. Run the initiate.project function.")
   }
   fileConn <- file(paste0(pathRegion,"/config.txt"))
   config <- readLines(fileConn)
@@ -103,32 +122,76 @@ get.iso <- function(mainPath,region){
   return(iso)
 }
 
-# Write lon/lat from config.txt 
-# Used when downloading boundaries
-write.lonlat <- function(border,pathBorder){
-  lon <- st_bbox(border)[1]+(st_bbox(border)[3]-st_bbox(border)[1])/2
-  lat <- st_bbox(border)[2]+(st_bbox(border)[4]-st_bbox(border)[2])/2
-  for(i in c("lon","lat")){
-    fileConn=file(paste0(pathBorder,"/../../config.txt"),open="r")
-    configTxt <- readLines(fileConn)
-    close(fileConn)
-    if(any(grepl(paste0(str_to_title(i),":"),configTxt))){
-      newValues <- gsub(paste0(str_to_title(i),":.*"),paste0(str_to_title(i),":",eval(parse(text=i))),configTxt)
-      fileConn=file(paste0(pathBorder,"/../../config.txt"),open="w")
-      writeLines(newValues,fileConn)
-      close(fileConn)
-    }else{
-      write(paste0(str_to_title(i),":",eval(parse(text=i))),file=paste0(pathBorder,"/../../config.txt"),append=TRUE)
+get.countryName <- function(mainPath,region){
+  pathRegion <- paste0(mainPath,"/",region,"/data")
+  if(!file.exists(paste0(pathRegion,"/config.txt"))){
+    stop("Project main parameters have not been set yet. Run the initiate.project function.")
+  }
+  fileConn <- file(paste0(pathRegion,"/config.txt"))
+  config <- readLines(fileConn)
+  close(fileConn)
+  country <- config[grepl("COUNTRY",config)]
+  country <- gsub("^[A-z]*\\:","",country)
+  return(country)
+}
+
+set.projection <- function(mainPath,region,border){
+  border <- get.boundaries(mainPath,region)
+  validEPSG <- crs_sf$crs_code[!is.na(crs_sf$crs_units) & crs_sf$crs_units=="m" & crs_sf$crs_type=="projected"]
+  # Select projection
+  suggestedCRS <- tryCatch({suggest_crs(input=border,type="projected",limit=10,units="m")},error=function(e){NULL})
+  if(is.null(suggestedCRS)){
+    cat("\nCountry/region is too small to make suggestions for suitable reference systems. Enter the EPSG code that you want to use for this project.")
+    cat("\n ")
+    selInd <- readline(prompt = "Selection: ")
+    epsg <- as.numeric(selInd)
+    if(!epsg %in% validEPSG){
+      stop("EPSG not valid !")
+    }
+  }else{
+    suggestedCRS <- paste(paste("EPSG:",suggestedCRS$crs_code),gsub(" .*$","",suggestedCRS$crs_proj4))
+    suggestedCRS <- c(suggestedCRS,"Other")
+    valid <- FALSE
+    while(!valid){
+      selectedProj <- menu(suggestedCRS,title="Select projection for this project",graphics=TRUE)
+      if(selectedProj==0){
+        stop("You exit the script.")
+      }
+      if(selectedProj==length(suggestedCRS)){
+        cat("\n\nEnter the EPSG code that you want to use for this project.")
+        cat("\n ")
+        selInd <- readline(prompt = "Selection: ")
+        epsg <- as.numeric(selInd)
+        if(!epsg %in% validEPSG){
+          message("EPSG not valid !")
+          valid <- FALSE
+        }
+      }else{
+        epsg <- unlist(str_split(string=suggestedCRS[selectedProj],pattern=" "))[2]
+        valid <- TRUE
+      }
     }
   }
+  fileConn=file(paste0(mainPath,"/",region,"/data/config.txt"),open="r")
+  configTxt <- readLines(fileConn)
+  close(fileConn)
+  if(any(grepl(paste0("EPSG:"),configTxt))){
+    newValues <- gsub("EPSG:.*",paste0("EPSG:",epsg),configTxt)
+    fileConn=file(paste0(mainPath,"/",region,"/data/config.txt"),open="w")
+    writeLines(newValues,fileConn)
+    close(fileConn)
+  }else{
+    write(paste0("EPSG:",epsg),file=paste0(mainPath,"/",region,"/data/config.txt"),append=TRUE)
+  }
+  message("Projection for this project has been set. If you want to change it, you must run this function again.")
 }
 
 # Download administrative boundaries (recommended)
 download.border.geoboundaries <- function(mainPath,region,adminLevel){
   # Check directory
-  pathBorder <- paste0(mainPath,"/",toupper(region),"/data/raw/vBorders")
+  pathBorder <- paste0(mainPath,"/",region,"/data/raw/vBorders")
   if(!dir.exists(pathBorder)){
-    stop(paste(pathBorder,"does not exist. Run the project.dir function first or check the input parameters."))
+    stop(paste(pathBorder,"does not exist. Run the initiate.project function first or check the input parameters."))
   }
   if(!adminLevel %in% c(0,1,2,3,4,5)){
     stop("Administrative level must be an integer from 0 to 5")
@@ -136,10 +199,11 @@ download.border.geoboundaries <- function(mainPath,region,adminLevel){
   # Get country code
   iso <- get.iso(mainPath,region)
   # Download the data
-  border <- geoboundaries(iso,adm_lvl=adminLevel,quiet=FALSE,)
+  border <- tryCatch({geoboundaries(iso,adm_lvl=adminLevel,quiet=FALSE)},error=function(e){NULL})
+  if(is.null(border)){
+    stop("No available shapefile from geoBoundaries for this country/region.You might have to download it manually.\n\n")
+  }
   borderMeta <- gb_metadata(iso,adm_lvl=adminLevel)
-  
-  write.lonlat(border,pathBorder)
   # Save metadata
   write.table(borderMeta,paste0(pathBorder,"/",borderMeta$boundaryID,".txt"))
   # Save shapefile
@@ -147,54 +211,11 @@ download.border.geoboundaries <- function(mainPath,region,adminLevel){
   cat(paste0(pathBorder,"/",borderMeta$boundaryID,".shp","\n"))
 }
 
-# Download administrative boundaries (NOT recommended, NOT UPDATED)
-download.zones.gadm <- function(mainPath,region,adminLevel){
-  # Check directory
-  pathBorder <- paste0(mainPath,"/",toupper(region),"/data/raw/vBorders")
-  if(!dir.exists(pathBorder)){
-    stop(paste(pathBorder,"does not exist. Run the project.dir function first or check the input parameters."))
-  }
-  if(!adminLevel %in% c(0,1,2,3,4,5)){
-    stop("Administrative level must be an integer from 0 to 5")
-  }
-  # Get country code
-  iso <- get.iso(mainPath,region)
-  # Download the data and save it as a shapefile
-  border <- tryCatch({getData('GADM',country=iso,level=adminLevel,path=pathBorder)},error=function(cond){stop(cond)})# this automatically downloads the borders from GADM, the level indicates the sub-national borders (i.e. 0 = country borders, 1 = province, 2 = district, etc.)
-  border <- as(border, "sf")
-  write.lonlat(border,pathBorder)
-  st_write(border,paste0(pathBorder,"/vBorders_r.shp"),append=F)
-  # Remove temporary file
-  file.remove(paste0(pathBorder,"/",list.files(pathBorder)[grepl("*.rds",list.files(pathBorder))]))
-  cat(paste0(pathBorder,"/vBorders_r.shp"))
-}
-
-# Get lon/lat from config.txt 
-# Used to download DEM
-get.lonlat <- function(mainPath,region){
-  pathRegion <- paste0(mainPath,"/",region,"/data")
-  if(!file.exists(paste0(pathRegion,"/config.txt"))){
-    stop("Project main parameters have not been set yet. Run the set.param function.")
-  }
-  fileConn <- file(paste0(pathRegion,"/config.txt"))
-  config <- readLines(fileConn)
-  close(fileConn)
-  lonTrue <- any(grepl("Lon:.*",config))
-  latTrue <- any(grepl("Lat:.*",config))
-  lonlatTrue <- all(lonTrue,latTrue)
-  if(!lonlatTrue){
-    stop("Lon/lat are missing from the config.txt. Run the download.border.geoboundaries function.")
-  }
-  lon <- as.numeric(gsub("Lon:","",config[grepl("Lon:.*",config)]))
-  lat <- as.numeric(gsub("Lat:","",config[grepl("Lat:.*",config)]))
-  return(list(lon,lat))
-}
-
 get.boundaries <- function(mainPath,region){
   # Check directory
-  pathBorder <- paste0(mainPath,"/",toupper(region),"/data/raw/vBorders")
+  pathBorder <- paste0(mainPath,"/",region,"/data/raw/vBorders")
   if(!dir.exists(pathBorder)){
-    stop(paste(pathBorder,"does not exist. Run the project.dir function first or check the input parameters."))
+    stop(paste(pathBorder,"does not exist. Run the initiate.project function first or check the input parameters."))
   }
   vBordersFolder <- list.files(pathBorder)
   vBordersShp <- grepl(".shp",vBordersFolder)
@@ -216,14 +237,14 @@ get.boundaries <- function(mainPath,region){
 # Download DEM from SRTM (FABDEM only can be accessed through their website)
 download.dem.srtm <- function(mainPath,region){
   # Check directory
-  pathDEM <- paste0(mainPath,"/",toupper(region),"/data/raw/rDEM")
+  pathDEM <- paste0(mainPath,"/",region,"/data/raw/rDEM")
   if(!dir.exists(pathDEM)){
-    stop(paste(pathDEM,"does not exist. Run the project.dir function first or check the input parameters."))
+    stop(paste(pathDEM,"does not exist. Run the initiate.project function first or check the input parameters."))
   }
   border <- get.boundaries(mainPath,region)
   border <- gUnaryUnion(border)
   # Download SRTM tiles shapefile in a temporary folder
-  tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rDEM/temp")
+  tmpFolder <- paste0(mainPath,"/",region,"/data/raw/rDEM/temp")
   dir.create(tmpFolder)
   download.file(url=urlSRTM,destfile = paste0(tmpFolder,"/srtm.zip"))
   unzip(zipfile=paste0(tmpFolder,"/srtm.zip"),overwrite=TRUE,exdir=tmpFolder)
@@ -231,23 +252,27 @@ download.dem.srtm <- function(mainPath,region){
   #Intersect country geometry with tile grid
   intersects <- gIntersects(border,shp,byid=TRUE)
   tiles <- shp[intersects[,1],]
-  
   #Download tiles
-  srtmList  <- list()
-  for(i in 1:length(tiles)){
-    print(i)
-    lon <- extent(tiles[i,])[1]  + (extent(tiles[i,])[2] - extent(tiles[i,])[1]) / 2
-    lat <- extent(tiles[i,])[3]  + (extent(tiles[i,])[4] - extent(tiles[i,])[3]) / 2
-    tile <- getData('SRTM',lon=lon,lat=lat,path=paste0(tmpFolder,"/"))
-    print(tile)
-    srtmList[[i]] <- tile
+  if(length(tiles)>1){
+    srtmList  <- list()
+    for(i in 1:length(tiles)){
+      cat(paste0("Downloading tile ",i,"/",length(tiles),"...\n"))
+      lon <- extent(tiles[i,])[1]  + (extent(tiles[i,])[2] - extent(tiles[i,])[1]) / 2
+      lat <- extent(tiles[i,])[3]  + (extent(tiles[i,])[4] - extent(tiles[i,])[3]) / 2
+      tile <- getData('SRTM',lon=lon,lat=lat,path=paste0(tmpFolder,"/"))
+      srtmList[[i]] <- tile
+    }
+    cat(paste0("Creating a mosaic with the downloaded rasters...\n"))
+    # Gdal mosaic (faster)
+    files <- list.files(tmpFolder,pattern="tif",full.names=TRUE)
+    mosaic_rasters(gdalfile=files,dst_dataset=paste0(pathDEM,"/srtm.tif"),of="GTiff")
+  }else{
+    lon <- extent(tiles[1,])[1]  + (extent(tiles[1,])[2] - extent(tiles[1,])[1]) / 2
+    lat <- extent(tiles[1,])[3]  + (extent(tiles[1,])[4] - extent(tiles[1,])[3]) / 2
+    tile <- getData('SRTM',lon=lon,lat=lat,path=paste0(pathDEM,"/srtm.tif"))
   }
-  # Mosaic
-  srtmList$fun <- mean 
-  srtmMosaic   <- do.call(mosaic, srtmList)
-  writeRaster(srtmMosaic,paste0(pathDEM,"/srtm.tif"),overwrite=TRUE)
   unlink(tmpFolder,recursive=TRUE)
-  cat(paste0(pathDEM,"/srtm.tif","\n"))
+  cat(paste0("\n",pathDEM,"/srtm.tif","\n"))
 }
 
 # Search in FTP folders
@@ -289,9 +314,10 @@ navigate.ftp <- function(folderLst,iso,pathFTP,pathFTP0){
   return(list(folderLst,pathFTP))
 }
 
+
 # Download population raster
 download.population <- function(mainPath,region){
-  pathFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rPopulation")
+  pathFolder <- paste0(mainPath,"/",region,"/data/raw/rPopulation")
   iso <- get.iso(mainPath,region)
   pathFTP0 <- "ftp://ftp.worldpop.org.uk/GIS/Population/"
   pathFTP <- pathFTP0
@@ -324,7 +350,7 @@ download.population <- function(mainPath,region){
     }else{
       for(i in selInd){
         filePath <- paste0(pathFTP,folderLst[i])
-        download.file(url=filePath,destfile=paste0(pathFolder,"/",folderLst[i]),quiet=FALSE,mode = "wb")
+        download.file(url=filePath,destfile=paste0(pathFolder,"/",folderLst[i]),quiet=FALSE,mode="wb")
         cat(paste0(pathFolder,"/",folderLst[i],"\n"))
       }
       downloadProcess <- FALSE
@@ -335,20 +361,108 @@ download.population <- function(mainPath,region){
 # Download land cover
 download.landcover <- function(mainPath,region){
   # Check directory
-  pathLandcover <- paste0(mainPath,"/",toupper(region),"/data/raw/rLandcover")
+  pathLandcover <- paste0(mainPath,"/",region,"/data/raw/rLandcover")
   if(!dir.exists(pathLandcover)){
-    stop(paste(pathLandcover,"does not exist. Run the project.dir function first or check the input parameters."))
+    stop(paste(pathLandcover,"does not exist. Run the initiate.project function first or check the input parameters."))
   }
   border <- get.boundaries(mainPath,region)
-  # Download SRTM tiles shapefile in a temporary folder
-  tmpFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rLandcover/temp")
-  dir.create(tmpFolder)
-  download_zenodo(doi=doiLC,path=tmpFolder,files=zenodoFileLC)
-  globalLandcover <- tryCatch({rast(paste0(tmpFolder,"/",zenodoFileLC))},error=function(e){stop("\nDownload issue: try to download the land cover raster manually at:\n https://doi.org/10.5281/zenodo.3939050")})
-  cropLandcover <- terra::crop(globalLandcover,border)
-  writeRaster(cropLandcover,paste0(pathLandcover,"/",zenodoFileLC),overwrite=TRUE)
-  unlink(tmpFolder,recursive=TRUE)
-  cat(paste0(pathLandcover,"/",zenodoFileLC,"\n"))
+  # Bugs wihen downloading from Zenodo, including through web explorer
+  # download_zenodo(doi=doiLC,path=tmpFolder,files=zenodoFileLC)
+  # globalLandcover <- tryCatch({rast(paste0(tmpFolder,"/",zenodoFileLC))},error=function(e){stop("\nDownload issue: try to download the land cover raster manually at:\n https://doi.org/10.5281/zenodo.3939050")})
+  # cropLandcover <- terra::crop(globalLandcover,border)
+  # writeRaster(cropLandcover,paste0(pathLandcover,"/",zenodoFileLC),overwrite=TRUE)
+  # unlink(tmpFolder,recursive=TRUE)
+  # cat(paste0(pathLandcover,"/",zenodoFileLC,"\n"))
+  
+  # Based on https://lcviewer.vito.be/download and the names of available files for downloading
+  # Coordinate intervals
+  seqCoord <- list(X=seq(from=-180,to=180,by=20),Y=seq(from=-40,to=80,by=20))
+  # Get extent of the boundaries
+  minMax <- list(X=c(extent(border)[1],extent(border)[2]),Y=c(extent(border)[3],extent(border)[4]))
+  # The file name: lower X limit, upper Y limit (see tiles at https://lcviewer.vito.be/download)
+  # findInterval function: upper limit
+  adjustTile <- c(X=-1,y=0)
+  prefixes <- list(c("E","N"),c("W","S"))
+  partialTileDeg <- vector(mode="list",length=2)
+  tileName <- NULL
+  for(i in 1:length(seqCoord)){
+    seqDeg <- seqCoord[[i]]
+    coords <- minMax[[i]]
+    for(j in 1:length(coords)){
+      coord <- coords[j]
+      if(coord %in% seqDeg){
+        if(j==1){
+          coord <- coord+1
+        }else{
+          coord <- coord-1
+        }
+      }
+      if(coord > max(seqDeg) | coord < min(seqDeg)){
+        stop("Region outside the limits of the Land Cover availability.")
+      }
+      getPosition <- findInterval(seqDeg,vec=coord)
+      partialTileDeg[[i]][j] <- seqDeg[min(which(getPosition==1))+adjustTile[i]]
+    }
+  }
+  seqTilesLst <- vector(mode="list",length=2)
+  for(i in 1:length(partialTileDeg)){
+    seqTilesLst[[i]] <- seq(partialTileDeg[[i]][1],partialTileDeg[[i]][2],by=20)
+  }
+  urls <- NULL
+  codeFiles <- NULL
+  for(i in seqTilesLst[[1]]){
+    if(i<0){
+      pref <- prefixes[[2]][1]
+    }else{
+      pref <- prefixes[[1]][1]
+    }
+    missing0 <- (nchar(as.character(max(seqCoord[[1]]))) - nchar(as.character(abs(i))))
+    if(missing0==2){
+      charX <- paste0(pref,"00",abs(i))
+    }else if(missing0==1){
+      charX <- paste0(pref,"0",abs(i))
+    }else{
+      charX <- paste0(pref,abs(i))
+    }
+    for(j in seqTilesLst[[2]]){
+      if(j<0){
+        pref <- prefixes[[2]][2]
+      }else{
+        pref <- prefixes[[1]][2]
+      }
+      missing0 <- (nchar(as.character(max(seqCoord[[2]])))-nchar(as.character(abs(j))))
+      if(missing0==1){
+        charY <- paste0(pref,"0",abs(j))
+      }else{
+        charY <- paste0(pref,abs(j))
+      }
+      codeFiles <- c(codeFiles,paste0(charX,charY))
+      urls <- c(urls,paste0(awsLCFolder,charX,charY,"/",charX,charY,awsLCSuffix))
+    }
+  }
+  if(length(urls)==1){
+    tryCatch({download.file(urls,destfile=paste0(pathLandcover,"/",region,awsLCSuffix,".tif"),mode ="wb")},error=function(e){NULL})
+  }else{
+    # Download SRTM tiles shapefile in a temporary folder
+    tmpFolder <- paste0(mainPath,"/",region,"/data/raw/rLandcover/temp")
+    dir.create(tmpFolder)
+    for(i in 1:length(urls)){
+      cat(paste0("Downloading tile ",i,"/",length(urls),"...\n"))
+      tryCatch({download.file(urls[i],destfile=paste0(tmpFolder,"/",codeFiles[i],".tif"),mode ="wb")},error=function(e){NULL})
+    }
+    cat(paste0("Creating a mosaic with the downloaded rasters...\n"))
+    files <- list.files(tmpFolder,pattern="tif",full.names=TRUE)
+    # Gdal mosaic
+    mosaic_rasters(gdalfile=files,dst_dataset=paste0(pathLandcover,"/",region,awsLCSuffix,".tif"),of="GTiff")
+    # # Another alternative: slower
+    # rList <- lapply(files,raster)
+    # rList$fun <- mean 
+    # cat(paste0("\Creating a mosaic with the downloaded rasters...\n"))
+    # LC <- do.call(mosaic,rList)
+    # writeRaster(LC,paste0(pathLandcover,"/",region,awsLCSuffix,".tif"),overwrite=TRUE)
+    unlink(tmpFolder,recursive=TRUE)
+  }
+  cat(paste0(pathLandcover,"/",region,awsLCSuffix,"\n"))
 }
 
 # Subset based on categories for automatically downloaded shapefiles
@@ -374,9 +488,9 @@ downlad.osm <- function(x,mainPath,region){
   if(!(x=="roads"|x=="waterLines"|x=="waterPolygons")){
     stop("x must be 'roads', 'waterLines' or 'waterPolygons'")
   }
-  pathFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/v",str_to_title(x))
+  pathFolder <- paste0(mainPath,"/",region,"/data/raw/v",str_to_title(x))
   if(!dir.exists(pathFolder)){
-    stop(paste(pathFolder,"does not exist. You may run the project.dir function first or check the input parameters."))
+    stop(paste(pathFolder,"does not exist. You may run the initiate.project function first or check the input parameters."))
   }
   if(x=="roads"){
     querySQL <- "SELECT * FROM 'lines' WHERE highway IS NOT NULL"
@@ -389,8 +503,9 @@ downlad.osm <- function(x,mainPath,region){
     colName <- "natural"
   }
   
+  border <- get.boundaries(mainPath,region)
   # Download 
-  shp <- oe_get(region,
+  shp <- oe_get(st_bbox(border),
                 quiet=FALSE,
                 query=querySQL,
                 download_directory=pathFolder,
@@ -403,12 +518,12 @@ downlad.osm <- function(x,mainPath,region){
   cat(paste0(pathFolder,"/v",str_to_title(x),"_",shapeName,".shp","\n"))
 }
 
-# Access config.txt (created with set.param) and get EPSG
+# Access config.txt (created with initiate.project) and get EPSG
 # Used in other functions
 get.epsg <- function(mainPath,region){
   pathRegion <- paste0(mainPath,"/",region,"/data")
   if(!file.exists(paste0(pathRegion,"/config.txt"))){
-    stop("Project main parameters have not been set yet. Run the set.param function.")
+    stop("Project main parameters have not been set yet. Run the initiate.project function.")
   }
   fileConn <- file(paste0(pathRegion,"/config.txt"))
   config <- readLines(fileConn)
@@ -432,23 +547,22 @@ select.DirFile <- function(x,msg){
   return(selectedX)
 }
 
-
 cropMaskProject.raster <- function(ras,borderInit,epsg){
   if(!compareCRS(ras, as(borderInit,"SpatVector"))){
   border <- st_transform(as(borderInit,"sf"),crs(ras))
   }else{
   border <- borderInit
   }
-  cat(paste("\nCropping:\n",ras %>% sources()))
+  cat(paste("\Cropping:\n",ras %>% sources()))
   rasCrop <- terra::crop(ras,border)
   cat(paste("\nMasking:\n",ras %>% sources()))
   rasMask <- terra::mask(rasCrop,as(border,"SpatVector"))
   reprojectionMethod <- c("near","bilinear","cubic","cubicspline")
-  bn <- menu(reprojectionMethod, title=cat(paste0("\nSelect reprojection method for:\n",ras %>% sources(),"\nSee terra::project function help for more details.")))
+  bn <- menu(reprojectionMethod, title=cat(paste0("\nSelect projection method for:\n",ras %>% sources(),"\nSee terra::project function help for more details.")))
   if(bn==0){
-    return(0)
+    return(NULL)
   }else{
-    cat(paste("\nReprojecting:\n",ras %>% sources()))
+    cat(paste("\nProjecting:\n",ras %>% sources()))
     rasProject <- terra::project(rasMask,epsg,method=reprojectionMethod[bn])
   }
   return(rasProject)
@@ -471,7 +585,7 @@ clipProject.shapefile <- function(shp,borderInit,epsg,inputName){
 resample.raster <- function(ras1,ras0,rasInit,population=FALSE){
   if(!population){
     resamplingMethod <- c("near","bilinear","cubic","cubicspline","lanczos","sum","min","q1","q3","max","average","mode","rms")
-    bn <- menu(resamplingMethod, title=cat(paste("\nSelect reprojection method for:\n",rasInit %>% sources(),"\nSee terra::resample function help for more details.")))
+    bn <- menu(resamplingMethod, title=cat(paste("\nSelect projection method for:\n",rasInit %>% sources(),"\nSee terra::resample function help for more details.")))
     if(bn==0){
       return(0)
     }else{
@@ -485,7 +599,7 @@ resample.raster <- function(ras1,ras0,rasInit,population=FALSE){
 }
  
 check.already.processed <- function(mainPath,region,inputName){
-  prFolder <- paste0(mainPath,"/",toupper(region),"/data/processed/",inputName)
+  prFolder <- paste0(mainPath,"/",region,"/data/processed/",inputName)
   prFiles <- list.files(prFolder)
   if(length(prFiles)>0){
     if(grepl(paste0(inputName,".tif"),prFiles)){
@@ -504,7 +618,7 @@ check.already.processed <- function(mainPath,region,inputName){
   }
 }
 
-check.input <- function(folder,stopMsg,multiMsg){
+check.layer <- function(folder,stopMsg,multiMsg){
   rasterLayer <- FALSE
   vectorLayer <- FALSE
   files <- list.files(folder)
@@ -547,13 +661,16 @@ check.input <- function(folder,stopMsg,multiMsg){
  
 process.inputs <- function(mainPath,region){
   epsg <- get.epsg(mainPath,region)
+  if(length(epsg)==0){
+    stop("EPSG for projection is not set. Run the set.projection function.")
+  }
   pathRaw <- paste0(mainPath,"/",region,"/data/raw")
   if(!dir.exists(pathRaw)){
-    stop(paste(pathRaw,"does not exist. You may run the project.dir function first or check the input parameters."))
+    stop(paste(pathRaw,"does not exist. You may run the initiate.project function first or check the input parameters."))
   }
   rawFolders <- list.dirs(pathRaw,recursive=FALSE)
   if(length(rawFolders)==0){
-    stop(paste(pathRaw,"is empty. You may run the project.dir function first or check the input parameters."))
+    stop(paste(pathRaw,"is empty. You may run the initiate.project function first or check the input parameters."))
   }else{
     borderInit <- get.boundaries(mainPath,region)
     folders <- gsub("^.*/raw/","",rawFolders)
@@ -567,12 +684,13 @@ process.inputs <- function(mainPath,region){
     if(any(filesRasTrue)){
       processPop <- check.already.processed(mainPath,region,"rPopulation")
       if(processPop){
-        popFolder <- paste0(mainPath,"/",toupper(region),"/data/raw/rPopulation")
+        message(paste0("\nPopulation raster..."))
+        popFolder <- paste0(mainPath,"/",region,"/data/raw/rPopulation")
         stopMsg <- "Population raster required for resampling is missing. Run the download.population function."
         multipleFilesMsg <- "Select the population raster that you want use for resampling."
-        popRas <- check.raster(popFolder,stopMsg,multipleFilesMsg)
+        popRas <- check.layer(popFolder,stopMsg,multipleFilesMsg)[[1]]
         popReproj <- cropMaskProject.raster(popRas,borderInit,epsg)
-        if(popReproj==0){
+        if(is.null(popReproj)){
           stop("You exit the script.")
         }
         # Initial resolution
@@ -603,8 +721,6 @@ process.inputs <- function(mainPath,region){
         border$pop_diff <- popSum/popFinalSum
         zonalStat  <- fasterize(border,as(popFinal,"Raster"),"pop_diff") # make a raster of the correction factors to correct loss of population
         popOut <- popFinal*as(zonalStat,"SpatRaster") # final population layer
-        plot(popOut) # check if it worked
-        res(popOut) # check resolution
         popOutFolder <- gsub("raw","processed",popFolder)
         writeRaster(popResampled,paste0(popOutFolder,"/rPopulation.tif"),overwrite=TRUE)
       }
@@ -618,10 +734,10 @@ process.inputs <- function(mainPath,region){
       message(selectedFolders[i])
       stopMsg <- "Raw input is missing."
       multipleFilesMsg <- "Select the input that you want to process."
-      inputLayers <- check.input(paste0(pathRaw,"/",selectedFolders[i]),stopMsg,multipleFilesMsg)
+      inputLayers <- check.layer(paste0(pathRaw,"/",selectedFolders[i]),stopMsg,multipleFilesMsg)
       if(!is.null(inputLayers[[1]])){
         rasReproj <- cropMaskProject.raster(inputLayers[[1]],borderInit,epsg)
-        rasPop <- rast(paste0(mainPath,"/",toupper(region),"/data/processed/rPopulation/rPopulation.tif"))
+        rasPop <- rast(paste0(mainPath,"/",region,"/data/processed/rPopulation/rPopulation.tif"))
         rasResampled <- resample.raster(rasReproj,rasPop,inputLayers[[1]],population=FALSE)
         outFolder <- gsub("raw","processed",paste0(pathRaw,"/",selectedFolders[i]))
         writeRaster(rasResampled,paste0(outFolder,"/",selectedFolders[i],".tif"),overwrite=TRUE)
@@ -636,19 +752,41 @@ process.inputs <- function(mainPath,region){
   cat("nDone !\n")
 }
 
-# CHECK IF ALL DATA READY
+check.input <- function(mainPath,region,type=NULL){
+  if(is.null(type)){
+    stop("'type' argument is missing'")
+  }
+  if(!type %in% c("raw","processed")){
+    stop("Type must be 'raw' or 'processed'")
+  }
+  # Check directory
+  path <- paste0(mainPath,"/",region,"/data/",type)
+  if(!dir.exists(path)){
+    stop(paste(path,"does not exist. Run the initiate.project function first or check the input parameters."))
+  }
+  dirs <- list.dirs(path)
+  for(dir in dirs[-1]){
+    empty <- length(list.files(dir))<1
+    if(empty){
+      cat(paste(str_to_title(type),gsub("^.*/raw/","",dir),"is empty\n"))
+    }
+  }
+}
+
+
 
 # Example --------------------------------------------------
 
-mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS"
-region <- "Afghanistan"
+mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS/Tests"
+initiate.project(mainPath)
 
-project.dir(mainPath,region)
-set.param(mainPath,region,"AFG",32642,100)
+region <- "Costa_Rica"
 download.border.geoboundaries(mainPath,region,1)
+set.projection(mainPath,region)
 download.dem.srtm(mainPath,region)
 download.population(mainPath,region)
 download.landcover(mainPath,region)
+check.input(mainPath,region,"raw")
 downlad.osm("waterPolygons",mainPath,region)
 downlad.osm("waterLines",mainPath,region)
 downlad.osm("roads",mainPath,region)
