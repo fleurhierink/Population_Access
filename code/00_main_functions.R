@@ -215,10 +215,12 @@ set.projection <- function(mainPath,region,border){
         cat("\n\nEnter the EPSG code that you want to use for this project.")
         cat("\n ")
         selInd <- readline(prompt = "Selection: ")
-        epsg <- as.numeric(selInd)
+        epsg <- selInd
         if(!epsg %in% validEPSG){
           message("EPSG not valid !")
           valid <- FALSE
+        }else{
+          valid <- TRUE
         }
       }else{
         epsg <- unlist(str_split(string=suggestedCRS[selectedProj],pattern=" "))[2]

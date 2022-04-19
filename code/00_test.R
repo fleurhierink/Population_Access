@@ -9,7 +9,7 @@ initiate.project(mainPath)
 
 # User argument 
 # The country name that corresponds to the created folder in the working directory
-region <- "Cyprus"
+region <- "Liechtenstein"
 
 # Download boundaries from the geoBoundaries (https://www.geoboundaries.org/)
 # region: the country name that corresponds to the country folder
