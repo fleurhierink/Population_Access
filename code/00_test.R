@@ -2,28 +2,31 @@ source("./code/00_main_functions.R")
 
 # User argement
 mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS/Tests"
+mainPath <- "C:/Users/timoner/Documents/GeoHealth/GIS/Population_raster_distortion"
 
 # To select the country, create the directories, and store the ISO code
 # mainPath: path of the working directory; a new folder with the country name will be created in there
-initiate.project(mainPath)
+initiate_project(mainPath)
 
 # User argument 
 # The country name that corresponds to the created folder in the working directory
-region <- "Liechtenstein"
+region <- "Afghanistan"
+region <- "Switzerland"
+region <- "Timor_Leste"
 
 # Download boundaries from the geoBoundaries (https://www.geoboundaries.org/)
 # region: the country name that corresponds to the country folder
 # adminLevel: administraive level
-download.boundaries(mainPath,region,adminLevel=1)
+download_boundaries(mainPath,region,adminLevel=2)
 
 # Set the projection for the entire project
-set.projection(mainPath,region)
+set_projection(mainPath,region)
 
 # Download the DEM (SRTM); if large region, it will download multiple tiles and mosaic them
 download.dem(mainPath,region)
 
 # Download the population raster; it allow to navigate through the WorldPop folders
-download.population(mainPath,region)
+download_population(mainPath,region)
 
 # Download the land cover; if large region, it will download multiple tiles and mosaic them
 download.landcover(mainPath,region)
