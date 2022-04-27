@@ -12,7 +12,7 @@ initiate_project(mainPath)
 # The country name that corresponds to the created folder in the working directory
 region <- "Afghanistan"
 region <- "Switzerland"
-region <- "Timor_Leste"
+region <- "Iceland"
 
 # Download boundaries from the geoBoundaries (https://www.geoboundaries.org/)
 # region: the country name that corresponds to the country folder
@@ -32,18 +32,18 @@ download_population(mainPath,region)
 download.landcover(mainPath,region)
 
 # Tells which input folders are still empty (raw or processed)
-check.input(mainPath,region,"raw")
+check_input(mainPath,region,"raw")
 
 # Download shapefiles from Open Street Map
 # countryName: if TRUE search by country name as it was displayed when initiating the project (full name)
 # If complex name, maybe better to set countryName=FALSE (slower but safer!)
 # First argument depends on which data is targeted
-downlad.osm("waterPolygons",mainPath,region,countryName=TRUE)
-downlad.osm("waterLines",mainPath,region,countryName=TRUE)
-downlad.osm("roads",mainPath,region,countryName=TRUE)
+downlad_osm("waterPolygons",mainPath,region,countryName=TRUE)
+downlad_osm("waterLines",mainPath,region,countryName=TRUE)
+downlad_osm("roads",mainPath,region,countryName=TRUE)
 
 # Process the inputs (crop, mask, project, resample, etc.)
-process.inputs(mainPath,region)
+process_inputs(mainPath,region)
 
 # Tells which input folders are still empty (raw or processed)
-check.input(mainPath,region,"processed")
+check_input(mainPath,region,"processed")

@@ -814,7 +814,7 @@ process_inputs <- function (mainPath,region) {
 }
 
 # Check which inputs have already been proceessed
-check_input <- function(mainPath, region, type=NULL){
+check_input <- function (mainPath, region, type=NULL) {
   if (is.null(type)) {
     stop("'type' argument is missing'")
   }
