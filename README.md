@@ -17,5 +17,7 @@ The R scripts are made to clip, project and prepare all input data for a geograp
 * **Accessibility coverage statistics**: calculation of the population covered in several travel time catchments (i.e., 30, 60, 120, 150, and 180 minutes) (R-scripts, 13_extract_coverage_X.R)
 
 ## Citation
-The paper in which these scripts have been developed and applied is currently in preparation. Please cite this github page when using code.
+The paper in which these scripts have been developed and applied is currently in review. Please cite the preprint:
+Fleur Hierink, Gianluca Boo, Peter Macharia, Paul Ouma, Pablo Timoner, Marc Levy, Kevin Tschirhart, Stefan Leyk, Nicholas Oliphant, Andrew Tatem, Nicolas Ray. Differences between gridded population data impact measures of geographic access to healthcare in sub-Saharan Africa, 28 April 2022, PREPRINT (Version 1) available at Research Square [https://doi.org/10.21203/rs.3.rs-1514074/v1]![image](https://user-images.githubusercontent.com/51711013/166212417-5a28bf15-e2d4-41dc-9379-b9abdafeff1f.png)
+
 
