@@ -198,7 +198,7 @@ download_boundaries <- function (mainPath, region, adminLevel) {
   # Save metadata
   write.table(borderMeta,paste0(pathBorder, "/", borderMeta$boundaryID, ".txt"))
   # Save shapefile
-  st_write(border,paste0(pathBorder, "/", borderMeta$boundaryID, ".shp"), append=FALSE)
+  st_write(border, paste0(pathBorder, "/", borderMeta$boundaryID, ".shp"), append = FALSE)
   cat(paste0(pathBorder, "/", borderMeta$boundaryID, ".shp", "\n"))
 }
 
@@ -206,7 +206,7 @@ download_boundaries <- function (mainPath, region, adminLevel) {
 get_boundaries <- function (mainPath, region) {
   # Check directory
   pathBorder <- paste0(mainPath, "/", region, "/data/raw/vBorders")
-  if(!dir.exists(pathBorder)){
+  if (!dir.exists(pathBorder)) {
     stop(paste(pathBorder,"does not exist. Run the initiate_project function first or check the input parameters."))
   }
   vBordersFolder <- list.files(pathBorder)
@@ -214,7 +214,7 @@ get_boundaries <- function (mainPath, region) {
   if (sum(vBordersShp) == 0) {
     stop("Administrative boundaries shapefile is missing. Run the download_boundaries function.")
   }else if (sum(vBordersShp) > 1) {
-    selectedIndex <- menu(vBordersFolder[vBordersShp], title="\nSelect the shapefile you will use for boundaries ?")
+    selectedIndex <- menu(vBordersFolder[vBordersShp], title="\nSelect the shapefile you will use for boundaries.")
     shp <- vBordersFolder[vBordersShp][selectedIndex]
     border <- readOGR(paste0(pathBorder, "/", shp))
     message("Loading boundaries...")
@@ -235,6 +235,7 @@ set_projection <- function (mainPath, region) {
   }
   validEPSG <- crs_sf$crs_code[!is.na(crs_sf$crs_units) & crs_sf$crs_units=="m" & crs_sf$crs_type == "projected"]
   # Select projection
+  cat(paste("\nESPG:", suggest_top_crs(border), "seems to be the best projected coordinate reference for this region/country."))
   suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 10, units = "m")}, error=function(e){NULL})
   if (is.null(suggestedCRS)) {
     cat("\nNo reference system can be suggested. Enter the EPSG code that you want to use for this project.")
@@ -277,7 +278,7 @@ set_projection <- function (mainPath, region) {
   close(fileConn)
   if(any(grepl(paste0("EPSG:"), configTxt))){
     newValues <- gsub("EPSG:.*", paste0("EPSG:", epsg), configTxt)
-    fileConn=file(paste0(mainPath, "/", region, "/data/config.txt"), open = "w")
+    fileConn <- file(paste0(mainPath, "/", region, "/data/config.txt"), open = "w")
     writeLines(newValues, fileConn)
     close(fileConn)
   }else{
@@ -351,7 +352,7 @@ navigate_ftp <- function (folderLst, iso, pathFTP, pathFTP0) {
         }else{
           folderLst <- c(folderLst, "EXIT FUNCTION")
         }
-        folderNb <- menu(c(folderLst), title="\nSelect folder (type the corresponding number or zero to get back to the root directory) ?")
+        folderNb <- menu(c(folderLst), title="\nSelect folder (type the corresponding number or zero to get back to the root directory)?")
         if (folderNb == length(folderLst)) {
           return(NULL)
         }else if (folderNb == (length(folderLst)-1)) {
@@ -625,24 +626,25 @@ resample_raster <- function (ras1, ras0, rasInit) {
   if (resm == 0) {
     return(NULL)
   }else{
-    cat(paste("\nResampling:\n", rasInit %>% sources()))
+    cat(paste("\nResampling:\n", rasInit %>% sources(),"\n"))
     rasResamp <- terra::resample(ras1, ras0, method = resamplingMethod[resm])
   }
 }
 
 # Process shapefile: clip and project
 process_shapefile <- function (shp, borderInit, epsg, inputName) {
+  cat(paste("\nProjecting:", inputName, "shapefile\n"))
+  shp <- st_transform(shp, st_crs(epsg))
   if (!compareCRS(shp, borderInit)) {
     border <- st_transform(as(borderInit, "sf"), crs(shp))
-  }else{
+  } else {
     border <- borderInit
   }
-  cat(paste("\nClipping:", inputName, "shapefile"))
+  cat(paste("\nClipping:", inputName, "shapefile\n\n"))
   shpInter <- st_intersects(shp, as(border, "sf")) 
   shpInter <- lengths(shpInter) > 0
   shpClip <- shp[shpInter, ]
-  shpProject <- st_transform(shpClip, st_crs(epsg))
-  return(shpProject)
+  return(shpClip)
 }
 
 # Procees again ?
@@ -650,7 +652,7 @@ already_processed <- function (mainPath,region,inputName) {
   prFolder <- paste0(mainPath, "/", region, "/data/processed/", inputName)
   prFiles <- list.files(prFolder)
   if (length(prFiles) > 0) {
-    if (grepl(paste0(inputName, ".tif"), prFiles)) {
+    if (any(grepl(paste0(inputName, ".tif"), prFiles))) {
       yn <- menu(c("YES", "NO"), title = cat(paste("\n", inputName, "was already processed. Do you want to reprocess it ?")))
       if (yn==1) {
         process <- TRUE
@@ -681,11 +683,13 @@ load_layer <- function (folder, stopMsg, multiMsg) {
       vectorLayer <- TRUE
     }
   }else{
-    stop(stopMsg)
+    message(stopMsg)
+    ras <- NULL
+    shp <- NULL
   }
   if (rasterLayer) {
     if (length(filesTif) > 1) {
-      fileInd <- menu(filesTif,multiMsg)
+      fileInd <- menu(filesTif, multiMsg)
       file <- filesTif[fileInd]
     }else{
       file <- filesTif
@@ -696,7 +700,7 @@ load_layer <- function (folder, stopMsg, multiMsg) {
   }
   if (vectorLayer) {
     if (length(filesShp) > 1) {
-      fileInd <- menu(filesShp,multiMsg)
+      fileInd <- menu(filesShp, multiMsg)
       file <- filesShp[fileInd]
     }else{
       file <- filesTif
@@ -708,6 +712,13 @@ load_layer <- function (folder, stopMsg, multiMsg) {
   return(list(ras, shp))
 }
  
+fast.test <- function(shp,ras,field) {
+  ras <- raster(ras)
+  shp <- st_read(shp)
+  xx <- fasterize(shp,ras,field)
+  return(xx)
+}
+
 # Main function to process the inputs
 process_inputs <- function (mainPath,region) {
   epsg <- get_param(mainPath = mainPath, region = region, "EPSG")
@@ -725,7 +736,7 @@ process_inputs <- function (mainPath,region) {
   }else{
     borderInit <- get_boundaries(mainPath, region)
     folders <- gsub("^.*/raw/", "", rawFolders)
-    selectedFolders <- select_DirFile(folders, "Enter all the indices that correspond to the inputs you want to process (on the same line separated by a space, or just skip to select all inputs)")
+    selectedFolders <- select_DirFile(folders, "Enter all the indices that correspond to the inputs you want to process (on the same line separated by a space, or just skip to select all inputs).")
     # Check if some rasters to be processed
     filesRasTrue <- NULL
     for (i in 1:length(selectedFolders)) {
@@ -747,12 +758,12 @@ process_inputs <- function (mainPath,region) {
         }
         # Initial resolution
         resInit <- terra::res(popReproj)
-        yn <- menu(c("YES", "NO"), title = paste("\nThe resolution of the population raster is", round(resInit[1], 2), "m. Would you like to modify it ?"))
+        yn <- menu(c("YES", "NO"), title = paste("\nThe resolution of the population raster is", round(resInit[1], 2), "m. Would you like to modify it?"))
         if (yn == 0) {
           message("You exit the function.")
           stop_quietly()
         }else if (yn == 1) {
-          cat("\n\nEnter the new resolution (m)\n")
+          cat("\nEnter the new resolution (m)\n")
           newRes <- readline(prompt = "Selection: ")
           newRes <- as.numeric(newRes)
           if (is.na(newRes) | newRes < 0) {
@@ -764,23 +775,38 @@ process_inputs <- function (mainPath,region) {
         }else{
           popFinal <- popReproj
         }
-        yn <- menu(c("YES", "NO"), title = "Reprojecting a raster always causes some (small) distortion in the grid of a raster.\nWould you like to correct ")
-        grd <- st_as_sf(st_make_grid(st_transform(as(borderInit, "sf"), crs(popFinal)), cellsize = 5000))
-        grdInter <- st_intersects(grd, st_transform(as(borderInit, "sf"), crs(popFinal)))
-        grdInter <- lengths(grdInter) > 0
-        grdClip <- grd[grdInter, ]
-        popSum <- exact_extract(popRas, st_transform(as(grdClip, "sf"), crs(popRas)), "sum")
-        popFinalSum <- exact_extract(popFinal, grdClip, "sum")
-        grdClip$pop_diff <- popSum / popFinalSum
-        zonalStat  <- fasterize(grdClip, as(popFinal, "Raster"), "pop_diff")
-        popOut <- popFinal * as(zonalStat, "SpatRaster")
-        popOutFolder <- gsub("raw", "processed", popFolder)
-        writeRaster(popFinal, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
+        yn <- menu(c("YES", "NO"), title = "Reprojecting a raster always causes some (small) distortion in the grid of a raster.\nWould you like to correct it (see 'help' for more details)?")
+        if (yn == 1) {
+          grd <- st_as_sf(st_make_grid(st_transform(as(borderInit, "sf"), crs(popFinal)), cellsize = 5000))
+          
+          grdInter <- st_intersects(grd, st_transform(as(borderInit, "sf"), crs(popFinal)))
+          grdInter <- lengths(grdInter) > 0
+          grdClip <- grd[grdInter, ]
+          popSum <- exact_extract(popRas, st_transform(as(grdClip, "sf"), crs(popRas)), "sum")
+          popFinalSum <- exact_extract(popFinal, grdClip, "sum")
+          grdClip$pop_diff <- popSum / popFinalSum
+          grdClip$pop_diff[is.na(grdClip$pop_diff)] <- 1
+          grdClip$pop_diff[is.infinite(grdClip$pop_diff)] <- 1
+          # print("Writing raster")
+          # writeRaster(popFinal,"test2.tif",overwrite=TRUE)
+          # popFinalRaster <- raster("test2.tif")
+          gc()
+          popFinal <- raster(popFinal)
+          # gc()
+          zonalStat  <- fasterize(grdClip, popFinal, "pop_diff")
+          # gc()
+          popOut <- popFinal * zonalStat
+          #                           
+          print("DONE")
+          # popOutFolder <- gsub("raw", "processed", popFolder)
+          # writeRaster(popOut, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
+        }
       }
     }
     selectedFolders <- selectedFolders[!grepl("rPopulation", selectedFolders)]
     if (length(selectedFolders) == 0) {
-      stop("No more input to be processed !")
+      message("No more input to be processed!")
+      stop_quietly()
     }
     for (i in 1:length(selectedFolders)) {
       cat("\n")
@@ -788,7 +814,8 @@ process_inputs <- function (mainPath,region) {
       processLayer <- already_processed(mainPath, region, selectedFolders[i])
       if (!processLayer) {
         if (i == length(selectedFolders)) {
-          stop("No more input to be processed !")
+          message("No more input to be processed!")
+          stop_quietly()
         }else{
           next
         }
@@ -810,7 +837,7 @@ process_inputs <- function (mainPath,region) {
       }
     }
   }
-  cat("\nDone !\n")
+  cat("\nDone!\n")
 }
 
 # Check which inputs have already been proceessed
@@ -830,7 +857,7 @@ check_input <- function (mainPath, region, type=NULL) {
   for (dir in dirs[-1]) {
     empty <- length(list.files(dir)) < 1
     if (empty) {
-      cat(paste(str_to_title(type), gsub("^.*/[A-z]*/", "", dir), "is empty\n"))
+      cat(paste(str_to_title(type), gsub("^.*/[A-z]*/", "", dir), "is empty.\n"))
     }
   }
 }
