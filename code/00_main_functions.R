@@ -190,7 +190,13 @@ download_boundaries <- function (mainPath, region, adminLevel) {
   # Get country code
   iso <- get_param(mainPath, region, "ISO")
   # Download the data
-  border <- tryCatch({geoboundaries(iso, adm_lvl = adminLevel, quiet = FALSE)}, error = function(e){NULL})
+  border <- NULL
+  adminLevelTry <- adminLevel
+  while (is.null(border) & adminLevelTry >= 0) {
+    message(paste("Trying", region, "administrative level", adminLevelTry))
+    border <- tryCatch({geoboundaries(iso, adm_lvl = adminLevelTry, quiet = FALSE)}, error = function(e){NULL})
+    adminLevelTry <- adminLevelTry - 1
+  }
   if (is.null(border)) {
     stop("No available shapefile from geoBoundaries for this country/region. You might have to download it manually.\n\n")
   }
@@ -216,12 +222,14 @@ get_boundaries <- function (mainPath, region) {
   }else if (sum(vBordersShp) > 1) {
     selectedIndex <- menu(vBordersFolder[vBordersShp], title="\nSelect the shapefile you will use for boundaries.")
     shp <- vBordersFolder[vBordersShp][selectedIndex]
-    border <- readOGR(paste0(pathBorder, "/", shp))
+    # border <- readOGR(paste0(pathBorder, "/", shp))
     message("Loading boundaries...")
+    border <- st_read(paste0(pathBorder, "/", shp))
     return(border)
   }else{
     message("Loading boundaries...")
-    border <- readOGR(paste0(pathBorder, "/", vBordersFolder[vBordersShp]))
+    # border <- readOGR(paste0(pathBorder, "/", vBordersFolder[vBordersShp]))
+    border <- st_read(paste0(pathBorder, "/", vBordersFolder[vBordersShp]))
     return(border)
   }
 }
@@ -284,7 +292,7 @@ set_projection <- function (mainPath, region) {
   }else{
     write(paste0("EPSG:", epsg), file = paste0(mainPath, "/", region, "/data/config.txt"), append = TRUE)
   }
-  message("Projection has been set.")
+  message("\n\nProjection has been set.")
 }
 
 # Download DEM from SRTM (FABDEM only can be accessed through their website)
@@ -295,6 +303,7 @@ download_dem <- function (mainPath,region) {
     stop(paste(pathDEM, "does not exist. Run the initiate_project function first or check the input parameters."))
   }
   border <- get_boundaries(mainPath, region)
+  border <- as(border, "Spatial")
   border <- gUnaryUnion(border)
   # Download SRTM tiles shapefile in a temporary folder
   tmpFolder <- paste0(mainPath, "/" ,region, "/data/raw/rDEM/temp")
@@ -302,7 +311,6 @@ download_dem <- function (mainPath,region) {
   download.file(url = urlSRTM, destfile = paste0(tmpFolder, "/srtm.zip"))
   unzip(zipfile = paste0(tmpFolder, "/srtm.zip"), overwrite = TRUE, exdir= tmpFolder)
   shp <- shapefile(paste0(tmpFolder, "/srtm_country-master/srtm/tiles.shp"))
-  #Intersect country geometry with tile grid
   intersects <- gIntersects(border, shp, byid=TRUE)
   tiles <- shp[intersects[,1],]
   #Download tiles
@@ -413,7 +421,7 @@ download_population <- function (mainPath, region) {
     }else{
       for (i in selInd) {
         filePath <- paste0(pathFTP, folderLst[i])
-        download.file(url = filePath, destfile = paste0(pathPop, "/", folderLst[i]), quiet=FALSE, mode="wb")
+        download.file(url = filePath, destfile = paste0(pathPop, "/", folderLst[i]), quiet=FALSE, mode="wb", method = "libcurl")
         cat(paste0(pathPop, "/", folderLst[i], "\n"))
       }
       downloadProcess <- FALSE
@@ -712,13 +720,6 @@ load_layer <- function (folder, stopMsg, multiMsg) {
   return(list(ras, shp))
 }
  
-fast.test <- function(shp,ras,field) {
-  ras <- raster(ras)
-  shp <- st_read(shp)
-  xx <- fasterize(shp,ras,field)
-  return(xx)
-}
-
 # Main function to process the inputs
 process_inputs <- function (mainPath,region) {
   epsg <- get_param(mainPath = mainPath, region = region, "EPSG")
@@ -777,29 +778,83 @@ process_inputs <- function (mainPath,region) {
         }
         yn <- menu(c("YES", "NO"), title = "Reprojecting a raster always causes some (small) distortion in the grid of a raster.\nWould you like to correct it (see 'help' for more details)?")
         if (yn == 1) {
-          grd <- st_as_sf(st_make_grid(st_transform(as(borderInit, "sf"), crs(popFinal)), cellsize = 5000))
+          border <- st_transform(as(borderInit, "sf"), crs(popFinal))
+          grd <- st_as_sf(st_make_grid(border, cellsize = 3000))
+          grdInter <- gIntersection(gUnaryUnion(as(border, "Spatial")), as(grd, "Spatial"), byid = TRUE)
+          grdInterPoly <- st_cast(as(grdInter, "sf"), "MULTIPOLYGON")
+          popFinalSum <- exact_extract(popFinal, grdInterPoly, "sum")
+          popSum <- exact_extract(popRas, st_transform(as(grdInterPoly, "sf"), crs(popRas)), "sum")
           
-          grdInter <- st_intersects(grd, st_transform(as(borderInit, "sf"), crs(popFinal)))
-          grdInter <- lengths(grdInter) > 0
-          grdClip <- grd[grdInter, ]
+          # Calculate the ratio per pixel (pop / total pop in the zone)
+          grdInterPoly$pop_final_sum <- popFinalSum
+          popSumGrid  <- fasterize(grdInterPoly, as(popFinal, "Raster"), field = "pop_final_sum")
+          pixFact <- popFinal / as(popSumGrid, "SpatRaster")
+          
+         
+          # Calculate the difference per zone
+          grdInterPoly$pop_diff <- popFinalSum - popSum
+          rastDiff <- fasterize(grdInterPoly, as(popFinal, "Raster"), field = "pop_diff")
+          # Weighted difference
+          rastDiffW <- as(rastDiff, "SpatRaster") * pixFact
+          popOut <- popFinal - rastDiffW
+          # Error
+          sum(values(popRas), na.rm = TRUE) - sum(values(popOut), na.rm = TRUE)
+          
+          # Alternative B
+          # Ratio per zone
+          grdInterPoly$pop_diff <- popSum / popFinalSum
+          # Set 1 to infinite (> 0 became 0)
+          grdInterPoly$pop_diff[is.na(grdInterPoly$pop_diff)] <- 1
+          # Set 1 to NA (or NA or 0 still 0)
+          grdInterPoly$pop_diff[is.infinite(grdInterPoly$pop_diff)] <- 1
+          zonalStat  <- fasterize(grdInterPoly, as(popFinal, "Raster"), "pop_diff")
+          popOut <- popFinal * as(zonalStat, "SpatRaster")
+          sum(values(popRas), na.rm = TRUE) - sum(values(popOut), na.rm = TRUE)
+          
+          # 
+          # grdInterPoly$value <- 1
+          # rastPix  <- fasterize(grdInterPoly, as(popFinal, "Raster"), field = "value")
+          # plot(rastPix)
+          # popSum <- exact_extract(popRas, st_transform(as(grdInterPoly, "sf"), crs(popRas)), "sum")
+          
+         
+          
+          # rastPix <- calc(as(popFinal, "Raster"), fun = function(x) { x[!is.na(x)] <- 1; return(x)})
+          # plot(popFinalNA)
+          # 
+          # 
+          # pixSum <- exact_extract(rastPix, grdInterPoly, "sum")
+          # popSum <- exact_extract(popRas, st_transform(as(grdInterPoly, "sf"), crs(popRas)), "sum")
+          # popFinalSum <- exact_extract(popFinal, grdInterPoly, "sum")
+          # grdInterPoly$correction <- (popSum - popFinalSum) / pixSum
+          # rastPixCorrect  <- fasterize(grdInterPoly, as(popFinal, "Raster"), field = "correction")
+          # plot(rastPixCorrect)
+          # 
+          
+          # gc()
+          # popOut <- popFinal + as(rastPixCorrect, "SpatRaster")
+          # popFinalSum2 <- exact_extract(popOut, grdInterPoly, "sum")
+          # sum(popFinalSum2)
+          # sum(popFinalSum)
+          # sum(popSum)
+          # 
+          # grdInter <- st_intersects(grd, st_transform(as(borderInit, "sf"), crs(popFinal)))
+          # grdInter <- lengths(grdInter) > 0
+          # grdClip <- grd[grdInter, ]
+          # plot(st_geometry(grdClip))
+          
+          grdClip <- grdInterPoly
           popSum <- exact_extract(popRas, st_transform(as(grdClip, "sf"), crs(popRas)), "sum")
           popFinalSum <- exact_extract(popFinal, grdClip, "sum")
-          grdClip$pop_diff <- popSum / popFinalSum
-          grdClip$pop_diff[is.na(grdClip$pop_diff)] <- 1
-          grdClip$pop_diff[is.infinite(grdClip$pop_diff)] <- 1
-          # print("Writing raster")
-          # writeRaster(popFinal,"test2.tif",overwrite=TRUE)
-          # popFinalRaster <- raster("test2.tif")
-          gc()
-          popFinal <- raster(popFinal)
-          # gc()
-          zonalStat  <- fasterize(grdClip, popFinal, "pop_diff")
-          # gc()
-          popOut <- popFinal * zonalStat
-          #                           
-          print("DONE")
-          # popOutFolder <- gsub("raw", "processed", popFolder)
-          # writeRaster(popOut, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
+          
+          
+          popFinalSum1 <- exact_extract(popOut, grdInterPoly, "sum")
+          sum(popFinalSum1)
+          sum(popFinalSum)
+          sum(popSum)
+          
+          popOutFolder <- gsub("raw", "processed", popFolder)
+          writeRaster(popOut, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
         }
       }
     }
