@@ -96,7 +96,7 @@ initiate_project <- function (mainPath) {
                "vWaterPolygons", "vBorders","vFacilities")
   message(paste("\nThe following input folders will be created:", paste(inputNames,collapse=", ")))
   # Add other data ?
-  yn <- menu(c("YES","NO"), title="\nDo you want to add another input folder (type 1 or 2)?")
+  yn <- menu(c("YES","NO"), title="\nDo you want to add another input folder (type 1 or 2) ?")
   if (yn == 0) {
     message("You exit the function.")
     stop_quietly()
@@ -104,7 +104,7 @@ initiate_project <- function (mainPath) {
   while (yn == 1) {
     newName <- readline(prompt = "Enter the folder name: ")
     inputNames <- c(inputNames, newName)
-    yn <- menu(c("YES", "NO"), title="\nDo you want to add another input folder?")
+    yn <- menu(c("YES", "NO"), title="\nDo you want to add another input folder ?")
     if (yn == 0) {
       message("You exit the function.")
       stop_quietly()
@@ -112,9 +112,12 @@ initiate_project <- function (mainPath) {
   }
   # Create directories
   pathData <- paste0(mainPath, "/", toupper(region), "/data")
-  dir.create(pathData, recursive = TRUE, showWarnings = FALSE)
-  for (inputName in inputNames) {
-    dir.create(paste0(pathData, "/", inputName), showWarnings = FALSE)
+  dir.create(pathData, recursive = TRUE)
+  for (type in c("raw", "processed")) {
+    dir.create(paste0(pathData, "/", type))
+    for (inputName in inputNames) {
+      dir.create(paste0(pathData, "/" ,type, "/", inputName))
+    }
   }
   # Create config.txt for ISO code, and then EPSG as well
   pathRegion <- paste0(mainPath, "/", region, "/data")
@@ -124,15 +127,29 @@ initiate_project <- function (mainPath) {
   # Create log.txt for operation tracking
   fileConn <- file(paste0(pathRegion, "/log.txt"))
   writeLines(regionOriginalName, fileConn)
-  writeLines(paste0(Sys.time(), ": Project initiated"), fileConn)
+  writeLines(paste(Sys.time(), ": Project initiated"), fileConn)
   close(fileConn)
   # Print directory tree
   dir_tree(paste0(mainPath, "/", region, "/data"))
 }
 
 
+
 # Access config.txt (created with initiate_project)
 # Used in other functions
+get_iso <- function (mainPath, region) {
+  pathRegion <- paste0(mainPath, "/", region, "/data")
+  if (!file.exists(paste0(pathRegion,"/config.txt"))) {
+    stop("Project main parameters have not been set yet. Run the initiate_project function.")
+  }
+  fileConn <- file(paste0(pathRegion, "/config.txt"))
+  config <- readLines(fileConn)
+  close(fileConn)
+  iso <- config[grepl("ISO",config)]
+  iso <- gsub("^[A-z]*\\:","",iso)
+  return(iso)
+}
+
 get_param <- function (mainPath, region, param) {
   pathRegion <- paste0(mainPath, "/", region, "/data")
   if (!file.exists(paste0(pathRegion, "/config.txt"))) {
@@ -146,47 +163,27 @@ get_param <- function (mainPath, region, param) {
   return(param)
 }
 
-check_exists <- function (path, layerType) {
-  if (!dir.exists(path)) {
-    stop(paste(path,"does not exist. Run the initiate_project function first or check the input parameters."))
+# Access config.txt (created with initiate_project)
+# Used in other functions
+get_countryName <- function (mainPath,region) {
+  pathRegion <- paste0(mainPath, "/", region, "/data")
+  if (!file.exists(paste0(pathRegion,"/config.txt"))) {
+    stop("Project main parameters have not been set yet. Run the initiate_project function.")
   }
-  if (!layerType %in% c("shp", "tif")) {
-    stop("layerType must be 'shp' or 'tif'")
-  }
-  fileLst <- list.files(path, full.names = FALSE, recursive = TRUE)
-  folderLst <- substr(fileLst[grepl(paste0("/raw/.*.", layerType), fileLst)], 1, 14)
-  if (length(folderLst) != 0) {
-    folders <- paste0(substr(folderLst, 1, 4), "-", substr(folderLst, 5, 6), "-", substr(folderLst, 7, 8), " ", substr(folderLst, 9, 10), ":", substr(folderLst, 11, 12), ":", substr(folderLst, 13, 14), " CEST")
-    return(folders)
-  } else {
-    return(NULL)
-  }
+  fileConn <- file(paste0(pathRegion,"/config.txt"))
+  config <- readLines(fileConn)
+  close(fileConn)
+  country <- config[grepl("COUNTRY",config)]
+  country <- gsub("^[A-z]*\\:","",country)
+  return(country)
 }
-
-check_downloaded <- function (folders) {
-  indFolder <- paste(paste0("\n", folders))    
-  cat("\nInput was already downloaded at the following date and time:\n")
-  cat(indFolder)
-  yn <- menu(c("YES","NO"), title="\n\nWould you like to download it again?")
-  if (yn == 0) {
-    message("You exit the function.")
-    stop_quietly()
-  }
-  if (yn == 2) {
-    message("Download canceled")
-    stop_quietly()
-  }
-}
-
-
 
 # Download administrative boundaries from geoBoundaries
 download_boundaries <- function (mainPath, region, adminLevel) {
   # Check directory
-  pathBorder <- paste0(mainPath, "/", region, "/data/vBorders")
-  folders <- check_exists(pathBorder, "shp")
-  if (!is.null(folders)) {
-    check_downloaded(folders)
+  pathBorder <- paste0(mainPath,"/", region, "/data/raw/vBorders")
+  if (!dir.exists(pathBorder)) {
+    stop(paste(pathBorder,"does not exist. Run the initiate_project function first or check the input parameters."))
   }
   if (!adminLevel %in% c(0,1,2,3,4,5)) {
     stop("Administrative level must be an integer from 0 to 5")
@@ -204,64 +201,44 @@ download_boundaries <- function (mainPath, region, adminLevel) {
   if (is.null(border)) {
     stop("No available shapefile from geoBoundaries for this country/region. You might have to download it manually.\n\n")
   }
-  sysTime <- Sys.time()
-  timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
-  dir.create(paste0(pathBorder, "/", timeFolder, "/raw"), recursive = TRUE)
-  pathBorder <- paste0(pathBorder, "/", timeFolder, "/raw")
   borderMeta <- gb_metadata(iso, adm_lvl = adminLevelTry)
   # Save metadata
   write.table(borderMeta,paste0(pathBorder, "/", borderMeta$boundaryID, ".txt"))
   # Save shapefile
   st_write(border, paste0(pathBorder, "/", borderMeta$boundaryID, ".shp"), append = FALSE)
   logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
-  write(paste0(sysTime, ": Boundaries downloaded from OSM (admin level ", adminLevelTry, ") - Folder: ", timeFolder), file = logTxt, append = TRUE)
+  write(paste0(Sys.time(), ": Boundaries downloaded (admin level ", adminLevelTry, ")"), file = logTxt, append = TRUE)
   cat(paste0(pathBorder, "/", borderMeta$boundaryID, ".shp", "\n"))
 }
 
+
 get_boundaries <- function (mainPath, region) {
   # Check directory
-  pathBorder <- paste0(mainPath, "/", region, "/data/vBorders")
+  pathBorder <- paste0(mainPath, "/", region, "/data/raw/vBorders")
   if (!dir.exists(pathBorder)) {
     stop(paste(pathBorder,"does not exist. Run the initiate_project function first or check the input parameters."))
   }
-  folders <- check_exists(pathBorder, "shp")
-  if (is.null(folders)) {
+  vBordersFolder <- list.files(pathBorder)
+  vBordersShp <- grepl(".shp", vBordersFolder)
+  if (sum(vBordersShp) == 0) {
     stop("Administrative boundaries shapefile is missing. Run the download_boundaries function.")
-  } else if (length(folders) > 1) {
-    selectedIndex <- menu(paste("Shapefile downloaded at", folders), title="\nSelect the shapefile you will use for boundaries")
-    inputFolder <- paste0(pathBorder, "/", gsub("-|[[:space:]]|:|[A-z]*","",folders)[selectedIndex], "/raw/")
-  } else {
-    inputFolder <- paste0(pathBorder, "/", gsub("-|[[:space:]]|:|[A-z]*","",folders), "/raw/")
+  }else if (sum(vBordersShp) > 1) {
+    selectedIndex <- menu(vBordersFolder[vBordersShp], title="\nSelect the shapefile you will use for boundaries.")
+    shp <- vBordersFolder[vBordersShp][selectedIndex]
+    # border <- readOGR(paste0(pathBorder, "/", shp))
+    message("Loading boundaries...")
+    border <- st_read(paste0(pathBorder, "/", shp))
+    return(border)
+  }else{
+    message("Loading boundaries...")
+    # border <- readOGR(paste0(pathBorder, "/", vBordersFolder[vBordersShp]))
+    border <- st_read(paste0(pathBorder, "/", vBordersFolder[vBordersShp]))
+    return(border)
   }
-  shp <- list.files(inputFolder, pattern = ".shp", full.names = TRUE, recursive = FALSE)
-  if (length(shp) > 1) {
-    warning(paste0("Multiples shapefiles in ", inputFolder, "; was used the following one: ",list.files(inputFolder, pattern = ".shp", full.names = FALSE, recursive = FALSE)[1]))
-  }
-  # border <- readOGR(paste0(pathBorder, "/", shp))
-  message("Loading boundaries...")
-  border <- st_read(shp[1])
-  return(border)
 }
 
 # Set the projection that will be used for the entire project
 set_projection <- function (mainPath, region) {
-  message("\nSuitable coordinate reference systems based on boundaries")
-  # Write the EPSG in the config.txt file
-  fileConn=file(paste0(mainPath, "/", region, "/data/config.txt"), open = "r")
-  configTxt <- readLines(fileConn)
-  close(fileConn)
-  if (any(grepl(paste0("EPSG:"), configTxt))) {
-    yn <- menu(c("YES", "NO"), title = paste("\nThe projected coordinate system has already been set. Would you like to modify it?"))
-    if (yn == 0) {
-      message("You exit the function.")
-      stop_quietly()
-    } 
-    if (yn == 2) {
-      epsg <- get_param(mainPath, region, "EPSG")
-      message(paste("EPSG previously set:", epsg))
-      stop_quietly()
-    }
-  }
   # Get the admin boundaries
   border <- get_boundaries(mainPath, region)
   if (!exists("crs_sf")) {
@@ -269,7 +246,7 @@ set_projection <- function (mainPath, region) {
   }
   validEPSG <- crs_sf$crs_code[!is.na(crs_sf$crs_units) & crs_sf$crs_units=="m" & crs_sf$crs_type == "projected"]
   # Select projection
-  cat(paste("\nESPG:", suggest_top_crs(border), "seems to be the best projected coordinate reference for this region/country.\n"))
+  cat(paste("\nESPG:", suggest_top_crs(border), "seems to be the best projected coordinate reference for this region/country."))
   suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 10, units = "m")}, error=function(e){NULL})
   if (is.null(suggestedCRS)) {
     cat("\nNo reference system can be suggested. Enter the EPSG code that you want to use for this project.")
@@ -312,41 +289,30 @@ set_projection <- function (mainPath, region) {
   close(fileConn)
   logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
   if(any(grepl(paste0("EPSG:"), configTxt))){
-    epsgOld <- get_param(mainPath, region, "EPSG")
-    if (epsgOld == epsg) {
-      message("\nNew projection equal to the one previously set. No change has been made.")
-      stop_quietly()
-    }
     newValues <- gsub("EPSG:.*", paste0("EPSG:", epsg), configTxt)
     fileConn <- file(paste0(mainPath, "/", region, "/data/config.txt"), open = "w")
     writeLines(newValues, fileConn)
     close(fileConn)
     write(paste0(Sys.time(), ": Projection parameter changed (", epsg, ")"), file = logTxt, append = TRUE)
-    warning("\nProjection parameter had already been set and has been changed. Inputs might have to be processed again.")
   }else{
     write(paste0("EPSG:", epsg), file = paste0(mainPath, "/", region, "/data/config.txt"), append = TRUE)
     write(paste0(Sys.time(), ": Projection parameter set (", epsg, ")"), file = logTxt, append = TRUE)
-    message("\n\nProjection parameter has been set.")
   }
+  message("\n\nProjection has been set.")
 }
 
 # Download DEM from SRTM (FABDEM only can be accessed through their website)
 download_dem <- function (mainPath,region) {
   # Check directory
-  pathDEM <- paste0(mainPath, "/", region, "/data/rDEM")
-  folders <- check_exists(pathDEM, "tif")
-  if (!is.null(folders)) {
-    check_downloaded(folders)
+  pathDEM <- paste0(mainPath, "/", region, "/data/raw/rDEM")
+  if (!dir.exists(pathDEM)) {
+    stop(paste(pathDEM, "does not exist. Run the initiate_project function first or check the input parameters."))
   }
   border <- get_boundaries(mainPath, region)
   border <- as(border, "Spatial")
   border <- gUnaryUnion(border)
   # Download SRTM tiles shapefile in a temporary folder
-  sysTime <- Sys.time()
-  timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
-  dir.create(paste0(pathDEM, "/", timeFolder, "/raw"), recursive = TRUE)
-  pathDEM <- paste0(pathDEM, "/", timeFolder, "/raw")
-  tmpFolder <- paste0(pathDEM, "/temp")
+  tmpFolder <- paste0(mainPath, "/" ,region, "/data/raw/rDEM/temp")
   dir.create(tmpFolder)
   download.file(url = urlSRTM, destfile = paste0(tmpFolder, "/srtm.zip"))
   unzip(zipfile = paste0(tmpFolder, "/srtm.zip"), overwrite = TRUE, exdir= tmpFolder)
@@ -373,7 +339,7 @@ download_dem <- function (mainPath,region) {
     lon <- extent(tiles[1,])[1]  + (extent(tiles[1,])[2] - extent(tiles[1,])[1]) / 2
     lat <- extent(tiles[1,])[3]  + (extent(tiles[1,])[4] - extent(tiles[1,])[3]) / 2
     tile <- getData('SRTM', lon = lon, lat = lat, path = pathDEM)
-    write(paste0(Sys.time(), ": Single DEM tile downloaded - Folder: ", timeFolder), file = logTxt, append = TRUE)
+    write(paste0(Sys.time(), ": Single DEM tile downloaded"), file = logTxt, append = TRUE)
   }
   unlink(tmpFolder, recursive = TRUE)
   files <- list.files(pathDEM)
@@ -425,10 +391,9 @@ navigate_ftp <- function (folderLst, iso, pathFTP, pathFTP0) {
 # Download population raster
 download_population <- function (mainPath, region) {
   # Check directory
-  pathPop <- paste0(mainPath, "/", region, "/data/rPopulation")
-  folders <- check_exists(pathPop, "tif")
-  if (!is.null(folders)) {
-    check_downloaded(folders)
+  pathPop <- paste0(mainPath, "/", region, "/data/raw/rPopulation")
+  if (!dir.exists(pathPop)) {
+    stop(paste(pathPop, "does not exist. Run the initiate_project function first or check the input parameters."))
   }
   iso <- get_param(mainPath, region, "ISO")
   pathFTP0 <- ftpWorldPop
@@ -451,7 +416,7 @@ download_population <- function (mainPath, region) {
     nFile <- 1:length(folderLst)
     indFile <- paste(paste0("\n", nFile, ": ", folderLst))
     cat(indFile)
-    cat("\n\nSelect file (corresponding number) to be downloaded.\nType zero to get back to the root directory.\nSkip to exit the function.")
+    cat("\n\nSelect file (corresponding number) to be downloaded (if multiple files: on the same line separated by a space).\nType zero to get back to the root directory.\nSkip to exit the function.")
     cat("\n ")
     selInd <- readline(prompt = "Selection: ")
     selInd <- as.numeric(unlist(strsplit(x = selInd, split = " ")))
@@ -461,20 +426,12 @@ download_population <- function (mainPath, region) {
     }else if (0 %in% selInd) {
       downloadProcess <- TRUE
       pathFTP <- pathFTP0
-    } else if (length(selInd) > 1) {
-      message("Multiple selection is not allowed.")
-      downloadProcess <- TRUE
-      pathFTP <- pathFTP0
     }else{
       logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
-      sysTime <- Sys.time()
-      timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
-      dir.create(paste0(pathPop, "/", timeFolder, "/raw"), recursive = TRUE)
-      pathPop <- paste0(pathPop, "/", timeFolder, "/raw")
       for (i in selInd) {
         filePath <- paste0(pathFTP, folderLst[i])
-        download.file(url = filePath, destfile = paste0(pathPop, "/", folderLst[i]), quiet = FALSE, mode = "wb", method = "libcurl")
-        write(paste0(Sys.time(), ": Population raster downloaded from ", filePath, " - Folder: ", timeFolder), file = logTxt, append = TRUE)
+        download.file(url = filePath, destfile = paste0(pathPop, "/", folderLst[i]), quiet=FALSE, mode="wb", method = "libcurl")
+        write(paste0(Sys.time(), ": Population raster downloaded from ", filePath), file = logTxt, append = TRUE)
         cat(paste0(pathPop, "/", folderLst[i], "\n"))
       }
       downloadProcess <- FALSE
@@ -485,10 +442,9 @@ download_population <- function (mainPath, region) {
 # Download land cover
 download_landcover <- function (mainPath, region) {
   # Check directory
-  pathLandcover <- paste0(mainPath, "/", region, "/data/rLandcover")
-  folders <- check_exists(pathLandcover, "tif")
-  if (!is.null(folders)) {
-    check_downloaded(folders)
+  pathLandcover <- paste0(mainPath, "/", region, "/data/raw/rLandcover")
+  if (!dir.exists(pathLandcover)) {
+    stop(paste(pathLandcover, "does not exist. Run the initiate_project function first or check the input parameters."))
   }
   border <- get_boundaries(mainPath,region)
   # Based on https://lcviewer.vito.be/download and the names of available files for downloading
@@ -558,16 +514,12 @@ download_landcover <- function (mainPath, region) {
     }
   }
   logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
-  sysTime <- Sys.time()
-  timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
-  dir.create(paste0(pathLandcover, "/", timeFolder, "/raw"), recursive = TRUE)
-  pathLandcover <- paste0(pathLandcover, "/", timeFolder, "/raw")
   if (length(urls) == 1) {
     download.file(urls, destfile = paste0(pathLandcover, "/", region, awsLCSuffix, ".tif"), mode = "wb")
-    write(paste0(Sys.time(), ": Single landcover tile downloaded - Folder: ", timeFolder), file = logTxt, append = TRUE)
+    write(paste0(Sys.time(), ": Single landcover tile downloaded"), file = logTxt, append = TRUE)
   }else{
     # Download SRTM tiles shapefile in a temporary folder
-    tmpFolder <- paste0(pathLandcover, "/temp")
+    tmpFolder <- paste0(mainPath, "/", region, "/data/raw/rLandcover/temp")
     dir.create(tmpFolder)
     for (i in 1:length(urls)) {
       cat(paste0("Downloading tile ", i, "/", length(urls), "...\n"))

@@ -1,7 +1,7 @@
 source("C:/Users/timoner/Documents/GeoHealth/Scripts/Population_Access/code/00_main_functions.R")
 
 # User argement
-mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS/"
+mainPath <- "C:/Users/timoner/Documents/GeoHealth/HeRAMS"
 mainPath <- "C:/Users/timoner/Documents/GeoHealth/GIS/Population_raster_distortion"
 
 # To select the country, create the directories, and store the ISO code
@@ -11,13 +11,13 @@ initiate_project(mainPath)
 # User argument 
 # The country name that corresponds to the created folder in the working directory
 region <- "Afghanistan"
-region <- "Switzerland"
+region <- "Malta"
 region <- "Central_African_Republic"
 
 # Download boundaries from the geoBoundaries (https://www.geoboundaries.org/)
 # region: the country name that corresponds to the country folder
 # adminLevel: administraive level
-download_boundaries(mainPath,region,adminLevel=3)
+download_boundaries(mainPath,region,adminLevel=4)
 
 # Set the projection for the entire project
 set_projection(mainPath,region)
