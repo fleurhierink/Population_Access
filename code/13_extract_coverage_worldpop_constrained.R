@@ -82,7 +82,7 @@ for (i in 1:nrow(admin0)) {
     # is smaller or equal to 30, 60, 90, 120, or 180 minutes, we take the total population count in that grid cell, 
     # if not we indicate 0 to state that no population in that grid cell is able to reach a health facility in those catchments.
     # Afterwards we calculate the relative population covered in the different administrative boundaries. 
-    worldpop_unconst_df <- final_df %>%
+    worldpop_const_df <- final_df %>%
       mutate(wpcon_totpop = wp_con,
              wpcon_30 = ifelse(traveltime <= 30, wpcon_totpop, 0), 
              wpcon_60 = ifelse(traveltime <= 60, wpcon_totpop, 0), 
@@ -102,7 +102,7 @@ for (i in 1:nrow(admin0)) {
              wpcon_180per = (wpcon_180/wpcon_totpop)*100,
              wpcon_barrierper = (wpcon_barrier/wpcon_totpop)*100)
     
-    write.csv(worldpop_unconst_df, file = paste0("data/processed/tCoverage/worldpop_constr/worldpop_constr_", iso3, ".csv"))
+    write.csv(worldpop_const_df, file = paste0("data/processed/tCoverage/worldpop_constr/worldpop_constr_", iso3, ".csv"))
   } 
   
   # if the population raster is not too heavy we process it all at once, using the steps
@@ -116,7 +116,7 @@ for (i in 1:nrow(admin0)) {
     df <- cbind(df, pop_adm[2])
     colnames(df) <- c("wp_con", "traveltime", "adm")
     final <- left_join(df, country, by = "adm")
-    worldpop_unconst_df <- final %>%
+    worldpop_const_df <- final %>%
       mutate(wpcon_totpop = wp_con,
              wpcon_30 = ifelse(traveltime <= 30, wpcon_totpop, 0), 
              wpcon_60 = ifelse(traveltime <= 60, wpcon_totpop, 0), 
@@ -135,7 +135,7 @@ for (i in 1:nrow(admin0)) {
              wpcon_150per = (wpcon_150/wpcon_totpop)*100,
              wpcon_180per = (wpcon_180/wpcon_totpop)*100,
              wpcon_barrierper = (wpcon_barrier/wpcon_totpop)*100)
-    write.csv(worldpop_unconst_df, file = paste0("data/processed/tCoverage/worldpop_constr/worldpop_constr_", iso3, ".csv")) 
+    write.csv(worldpop_const_df, file = paste0("data/processed/tCoverage/worldpop_constr/worldpop_constr_", iso3, ".csv")) 
   }
   gc()
 }
