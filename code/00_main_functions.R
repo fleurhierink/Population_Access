@@ -134,7 +134,7 @@ initiate_project <- function (mainPath) {
   # Create config.txt for ISO code, and then EPSG as well
   pathRegion <- paste0(mainPath, "/", region, "/data")
   fileConn <- file(paste0(pathRegion, "/config.txt"))
-  writeLines(c(paste0("COUNTRY:", regionOriginalName), paste0("ISO:", iso3), paste0("rPopulation_proj: bilinear")), fileConn)
+  writeLines(c(paste0("COUNTRY:", regionOriginalName), paste0("ISO:", iso3)), fileConn)
   close(fileConn)
   # Create log.txt for operation tracking
   fileConn <- file(paste0(pathRegion, "/log.txt"))
@@ -855,6 +855,7 @@ process_raster <- function (ras, border, epsg, projMeth) {
   cat(paste("\n\nMasking:\n", ras %>% sources()))
   rasMask <- terra::mask(rasCrop, as(border, "SpatVector"))
   if (is.null(projMeth)) {
+    projectionMethod <- c("near", "bilinear","cubic", "cubicspline")
     pm <- menu(projectionMethod, title = cat(paste0("\n\nSelect projection method for:\n", ras %>% sources(),"\nSee terra::project function help for more details.")))
     if (pm == 0) {
       return(NULL)
@@ -870,6 +871,7 @@ process_raster <- function (ras, border, epsg, projMeth) {
 # Resample raster
 resample_raster <- function (ras1, ras0, rasInit, resampMeth) {
   if (is.null(resampMeth)) {
+    resamplingMethod <- c("near", "bilinear", "cubic", "cubicspline", "lanczos", "sum", "min", "q1", "q3", "max", "average", "mode", "rms")
     resm <- menu(resamplingMethod, title = cat(paste("\n\nSelect resampling method for:\n", rasInit %>% sources(),"\nSee terra::resample function help for more details.")))
     if (resm == 0) {
       return(NULL)
@@ -1017,6 +1019,7 @@ check_input <- function (mainPath, region, type, print = FALSE) {
 }
 
 process_pop <- function (mainPath, region, border, epsg, mostRecent, defaultMethods, changeRes, newRes, popCorrection, gridRes) {
+  logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
   message("\nProcessing population raster...")
   popFolder <- paste0(mainPath, "/", region, "/data/rPopulation")
   popFolders <- check_exists(popFolder, "raw")
@@ -1163,7 +1166,7 @@ process_pop <- function (mainPath, region, border, epsg, mostRecent, defaultMeth
   
  
 # Main function to process the inputs
-process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess = FALSE, defaultMethods = FALSE, changeRes = NULL, newRes = NULL, popCorrection = NULL, gridRes = NULL) {
+process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess = FALSE, defaultMethods = FALSE, changeRes = NULL, newRes = NULL, popCorrection = NULL, gridRes = NULL, all = TRUE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
@@ -1206,7 +1209,11 @@ process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess 
   if (length(rawFolders) == 0) {
     stop("No input data available.")
   }
-  selectedFolders <- select_DirFile(rawFolders, "Enter all the indices that correspond to the inputs you want to process.\nOn the same line separated by a space, or just skip to select all inputs.")
+  if (!all) {
+    selectedFolders <- select_DirFile(rawFolders, "Enter all the indices that correspond to the inputs you want to process.\nOn the same line separated by a space, or just skip to select all inputs.")
+  } else {
+    selectedFolders <- rawFolders
+  }
   # Border is required for any input processing; if wanted, first process this layer
   borderPath <- paste0(mainPath, "/", region, "/data/vBorders")
   borderPr <- check_exists(borderPath, "processed")
