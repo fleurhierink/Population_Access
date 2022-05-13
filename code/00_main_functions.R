@@ -134,7 +134,7 @@ initiate_project <- function (mainPath) {
   # Create config.txt for ISO code, and then EPSG as well
   pathRegion <- paste0(mainPath, "/", region, "/data")
   fileConn <- file(paste0(pathRegion, "/config.txt"))
-  writeLines(c(paste0("COUNTRY:", regionOriginalName), paste0("ISO:", iso3)), fileConn)
+  writeLines(c(paste0("COUNTRY:", regionOriginalName), paste0("ISO:", iso3), paste0("rPopulation_proj: bilinear")), fileConn)
   close(fileConn)
   # Create log.txt for operation tracking
   fileConn <- file(paste0(pathRegion, "/log.txt"))
@@ -232,7 +232,7 @@ choose_input <- function (folders, msg, mostRecent = FALSE) {
 }
 
 # Download administrative boundaries from geoBoundaries
-download_boundaries <- function (mainPath, region, adminLevel) {
+download_boundaries <- function (mainPath, region, adminLevel, alwaysDownload = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
@@ -242,11 +242,16 @@ download_boundaries <- function (mainPath, region, adminLevel) {
   if (!adminLevel %in% c(0,1,2,3,4,5)) {
     stop("Administrative level must be an integer from 0 to 5")
   }
+  if (!is.logical(alwaysDownload)) {
+    stop("alwaysDownload must be 'logical'")
+  }
   # Check directory
   pathBorder <- paste0(mainPath, "/", region, "/data/vBorders")
   folders <- check_exists(pathBorder, "raw")
   if (!is.null(folders)) {
-    check_downloaded(folders)
+    if (!alwaysDownload) {
+      check_downloaded(folders)
+    }
   }
   # Get country code
   iso <- get_param(mainPath, region, "ISO")
@@ -324,12 +329,15 @@ get_boundaries <- function (mainPath, region, type, mostRecent) {
 }
 
 # Set the projection that will be used for the entire project
-set_projection <- function (mainPath, region) {
+set_projection <- function (mainPath, region, mostRecent = FALSE, alwaysSet = FALSE, bestCRS = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
   if (!is.character(region)) {
     stop("region must be 'character'")
+  }
+  if (!is.logical(mostRecent)){
+    stop("mostRecent must be 'logical'")
   }
   message("\nSuitable coordinate reference systems based on boundaries")
   # Write the EPSG in the config.txt file
@@ -337,18 +345,24 @@ set_projection <- function (mainPath, region) {
   configTxt <- readLines(fileConn)
   close(fileConn)
   if (any(grepl(paste0("EPSG:"), configTxt))) {
-    yn <- menu(c("YES", "NO"), title = paste("\nThe projected coordinate system has already been set. Would you like to modify it?"))
-    if (yn == 0) {
-      message("You exit the function.")
-      stop_quietly()
-    } 
-    if (yn == 2) {
+    if (!alwaysSet) {
+      yn <- menu(c("YES", "NO"), title = paste("\nThe projected coordinate system has already been set. Would you like to modify it?"))
+      if (yn == 0) {
+        message("You exit the function.")
+        stop_quietly()
+      }
+      if (yn == 2) {
+        epsg <- get_param(mainPath, region, "EPSG")
+        message(paste("EPSG previously set:", epsg))
+        stop_quietly()
+      }
+    } else {
       epsg <- get_param(mainPath, region, "EPSG")
       message(paste("EPSG previously set:", epsg))
-      stop_quietly()
     }
   }
   # Get the admin boundaries
+  message("\nLoading raw boundary shapefile...")
   border <- get_boundaries(mainPath, region, "raw", mostRecent)
   if (!exists("crs_sf")) {
     stop("'crs_sf' table from 'crsuggest' is missing. Load the 'crsuggest' package.")
@@ -356,39 +370,43 @@ set_projection <- function (mainPath, region) {
   validEPSG <- crs_sf$crs_code[!is.na(crs_sf$crs_units) & crs_sf$crs_units=="m" & crs_sf$crs_type == "projected"]
   # Select projection
   cat(paste("\nEPSG:", suggest_top_crs(border), "seems to be the best projected coordinate reference for this region/country.\n"))
-  suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 10, units = "m")}, error=function(e){NULL})
-  if (is.null(suggestedCRS)) {
-    cat("\nNo reference system can be suggested. Enter the EPSG code that you want to use for this project.")
-    cat("\n ")
-    selInd <- readline(prompt = "Selection: ")
-    epsg <- as.numeric(selInd)
-    if (!epsg %in% validEPSG) {
-      stop("EPSG not valid !")
-    }
+  if (bestCRS) {
+    epsg <- suggest_top_crs(border)
   } else {
-    suggestedCRS <- paste(paste("EPSG:", suggestedCRS$crs_code), gsub(" .*$", "", suggestedCRS$crs_proj4))
-    suggestedCRS <- c(suggestedCRS,"Other")
-    valid <- FALSE
-    while (!valid) {
-      selectedProj <- menu(suggestedCRS, title = "Select projection for this project", graphics=TRUE)
-      if (selectedProj == 0 | !exists("selectedProj")) {
-        message("You exit the function.")
-        stop_quietly()
+    suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 10, units = "m")}, error=function(e){NULL})
+    if (is.null(suggestedCRS)) {
+      cat("\nNo reference system can be suggested. Enter the EPSG code that you want to use for this project.")
+      cat("\n ")
+      selInd <- readline(prompt = "Selection: ")
+      epsg <- as.numeric(selInd)
+      if (!epsg %in% validEPSG) {
+        stop("EPSG not valid !")
       }
-      if (selectedProj == length(suggestedCRS)) {
-        cat("\n\nEnter the EPSG code that you want to use for this project.")
-        cat("\n ")
-        selInd <- readline(prompt = "Selection: ")
-        epsg <- selInd
-        if (!epsg %in% validEPSG) {
-          message("EPSG not valid !")
-          valid <- FALSE
+    } else {
+      suggestedCRS <- paste(paste("EPSG:", suggestedCRS$crs_code), gsub(" .*$", "", suggestedCRS$crs_proj4))
+      suggestedCRS <- c(suggestedCRS, "Other")
+      valid <- FALSE
+      while (!valid) {
+        selectedProj <- menu(suggestedCRS, title = "Select projection for this project", graphics=TRUE)
+        if (selectedProj == 0 | !exists("selectedProj")) {
+          message("You exit the function.")
+          stop_quietly()
+        }
+        if (selectedProj == length(suggestedCRS)) {
+          cat("\n\nEnter the EPSG code that you want to use for this project.")
+          cat("\n ")
+          selInd <- readline(prompt = "Selection: ")
+          epsg <- selInd
+          if (!epsg %in% validEPSG) {
+            message("EPSG not valid !")
+            valid <- FALSE
+          }else{
+            valid <- TRUE
+          }
         }else{
+          epsg <- unlist(str_split(string = suggestedCRS[selectedProj], pattern = " "))[2]
           valid <- TRUE
         }
-      }else{
-        epsg <- unlist(str_split(string = suggestedCRS[selectedProj], pattern = " "))[2]
-        valid <- TRUE
       }
     }
   }
@@ -417,19 +435,28 @@ set_projection <- function (mainPath, region) {
 }
 
 # Download DEM from SRTM (FABDEM only can be accessed through their website)
-download_dem <- function (mainPath,region) {
+download_dem <- function (mainPath, region, alwaysDownload = FALSE, mostRecent = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
   if (!is.character(region)) {
     stop("region must be 'character'")
   }
+  if (!is.logical(alwaysDownload)) {
+    stop("alwaysDownload must be 'logical'")
+  }
+  if (!is.logical(mostRecent)){
+    stop("mostRecent must be 'logical'")
+  }
   # Check directory
   pathDEM <- paste0(mainPath, "/", region, "/data/rDEM")
   folders <- check_exists(pathDEM, "raw")
   if (!is.null(folders)) {
-    check_downloaded(folders)
+    if (!alwaysDownload) {
+      check_downloaded(folders)
+    }
   }
+  message("\nLoading raw boundary shapefile...")
   border <- get_boundaries(mainPath, region, "raw", mostRecent)
   border <- as(border, "Spatial")
   border <- gUnaryUnion(border)
@@ -515,18 +542,23 @@ navigate_ftp <- function (folderLst, iso, pathFTP, pathFTP0) {
 }
 
 # Download population raster
-download_population <- function (mainPath, region) {
+download_population <- function (mainPath, region, alwaysDownload = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
   if (!is.character(region)) {
     stop("region must be 'character'")
   }
+  if (!is.logical(alwaysDownload)) {
+    stop("alwaysDownload must be 'logical'")
+  }
   # Check directory
   pathPop <- paste0(mainPath, "/", region, "/data/rPopulation")
   folders <- check_exists(pathPop, "raw")
   if (!is.null(folders)) {
-    check_downloaded(folders)
+    if (!alwaysDownload) {
+      check_downloaded(folders)
+    }
   }
   iso <- get_param(mainPath, region, "ISO")
   pathFTP0 <- ftpWorldPop
@@ -585,19 +617,28 @@ download_population <- function (mainPath, region) {
 }
 
 # Download land cover
-download_landcover <- function (mainPath, region) {
+download_landcover <- function (mainPath, region, alwaysDownload = FALSE, mostRecent = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
   if (!is.character(region)) {
     stop("region must be 'character'")
   }
+  if (!is.logical(alwaysDownload)) {
+    stop("alwaysDownload must be 'logical'")
+  }
+  if (!is.logical(mostRecent)){
+    stop("mostRecent must be 'logical'")
+  }
   # Check directory
   pathLandcover <- paste0(mainPath, "/", region, "/data/rLandcover")
   folders <- check_exists(pathLandcover, "raw")
   if (!is.null(folders)) {
-    check_downloaded(folders)
+    if (!alwaysDownload) {
+      check_downloaded(folders)
+    }
   }
+  message("\nLoading raw boundary shapefile...")
   border <- get_boundaries(mainPath, region, "raw", mostRecent)
   # Based on https://lcviewer.vito.be/download and the names of available files for downloading
   # Coordinate intervals
@@ -713,7 +754,7 @@ select_categories <- function (sfObject, columnName) {
 }
 
 # Download shapefile from Open Street Map
-download_osm <- function (x, mainPath, region, countryName = TRUE) {
+download_osm <- function (x, mainPath, region, alwaysDownload = FALSE, countryName = TRUE, mostRecent = NULL) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
@@ -723,13 +764,26 @@ download_osm <- function (x, mainPath, region, countryName = TRUE) {
   if (!(x == "roads" | x == "waterLines" | x == "waterPolygons")) {
     stop("x must be 'roads', 'waterLines' or 'waterPolygons'")
   }
+  if (!is.logical(alwaysDownload)) {
+    stop("alwaysDownload must be 'logical'")
+  }
   if (!is.logical(countryName)) {
     stop("countryName must be 'logical'")
+  }
+  if (!countryName) {
+    if (is.null(mostRecent)) {
+      stop("mostRecent is required when countryName is FALSE")
+    }
+    if (!is.logical(mostRecent)){
+      stop("mostRecent must be 'logical'")
+    }
   }
   pathFolder <- paste0(mainPath, "/", region, "/data/v", str_to_title(x))
   folders <- check_exists(pathFolder, "raw")
   if (!is.null(folders)) {
-    check_downloaded(folders)
+    if (!alwaysDownload) {
+      check_downloaded(folders)
+    }
   }
   if (x == "roads") {
     querySQL <- "SELECT * FROM 'lines' WHERE highway IS NOT NULL"
@@ -754,6 +808,7 @@ download_osm <- function (x, mainPath, region, countryName = TRUE) {
                   download_directory = pathFolder,
                   force_download = TRUE)
   }else{
+    message("\nLoading raw boundary shapefile...")
     border <- get_boundaries(mainPath, region, "raw", mostRecent)
     # Download 
     shp <- oe_get(st_bbox(border),
@@ -793,34 +848,38 @@ select_DirFile <- function (x, msg) {
 }
 
 # Process raster: crop, mask and project
-process_raster <- function (ras, border, epsg) {
+process_raster <- function (ras, border, epsg, projMeth) {
   border <- st_transform(as(border, "sf"), crs(ras))
   cat(paste("Cropping:\n", ras %>% sources()))
   rasCrop <- terra::crop(ras, border)
   cat(paste("\n\nMasking:\n", ras %>% sources()))
   rasMask <- terra::mask(rasCrop, as(border, "SpatVector"))
-  reprojectionMethod <- c("near", "bilinear","cubic", "cubicspline")
-  pm <- menu(reprojectionMethod, title = cat(paste0("\n\nSelect projection method for:\n", ras %>% sources(),"\nSee terra::project function help for more details.")))
-  if (pm == 0) {
-    return(NULL)
-  }else{
-    cat(paste("\nProjecting:\n", ras %>% sources(), "\n"))
-    rasProject <- terra::project(rasMask, epsg, method = reprojectionMethod[pm])
-    return(list(rasProject, reprojectionMethod[pm]))
-  }
+  if (is.null(projMeth)) {
+    pm <- menu(projectionMethod, title = cat(paste0("\n\nSelect projection method for:\n", ras %>% sources(),"\nSee terra::project function help for more details.")))
+    if (pm == 0) {
+      return(NULL)
+    } else {
+      projMeth <- projectionMethod[pm]
+    }
+  } 
+  cat(paste("\nProjecting:\n", ras %>% sources(), "\n"))
+  rasProject <- terra::project(rasMask, epsg, method = projMeth)
+  return(list(rasProject, projMeth))
 }
 
 # Resample raster
-resample_raster <- function (ras1, ras0, rasInit) {
-  resamplingMethod <- c("near", "bilinear", "cubic", "cubicspline", "lanczos", "sum", "min", "q1", "q3", "max", "average", "mode", "rms")
-  resm <- menu(resamplingMethod, title = cat(paste("\n\nSelect resampling method for:\n", rasInit %>% sources(),"\nSee terra::resample function help for more details.")))
-  if (resm == 0) {
-    return(NULL)
-  }else{
-    cat(paste("\nResampling:\n", rasInit %>% sources(),"\n"))
-    rasResamp <- terra::resample(ras1, ras0, method = resamplingMethod[resm])
-    return(list(rasResamp, resamplingMethod[resm]))
+resample_raster <- function (ras1, ras0, rasInit, resampMeth) {
+  if (is.null(resampMeth)) {
+    resm <- menu(resamplingMethod, title = cat(paste("\n\nSelect resampling method for:\n", rasInit %>% sources(),"\nSee terra::resample function help for more details.")))
+    if (resm == 0) {
+      return(NULL)
+    } else {
+      resampMeth <- resamplingMethod[resm]
+    }
   }
+  cat(paste("\nResampling:\n", rasInit %>% sources(),"\n"))
+  rasResamp <- terra::resample(ras1, ras0, method = resampMeth)
+  return(list(rasResamp, resampMeth))
 }
 
 # Process shapefile: clip and project
@@ -836,18 +895,19 @@ process_shapefile <- function (shp, borderInit, epsg, inputName) {
 }
 
 # Procees again ?
-already_processed <- function (path) {
-  if (!is.character(path)) {
-    stop("path must be 'character'")
-  }
+already_processed <- function (path, alwaysProcess) {
   prFiles <- list.files(gsub("raw", "processed", path), recursive = TRUE, pattern = "*.tif|*.shp")
   if (length(prFiles) > 0) {
-    inputName <- gsub("/raw$", "", gsub("^.*/data/", "", path))
-    yn <- menu(c("YES", "NO"), title = cat(paste("\n", inputName, "was already processed. Would you like to reprocess it?")))
-    if (yn==1) {
+    if (!alwaysProcess) {
+      inputName <- gsub("/raw$", "", gsub("^.*/data/", "", path))
+      yn <- menu(c("YES", "NO"), title = cat(paste("\n", inputName, "was already processed. Would you like to reprocess it?")))
+      if (yn==1) {
+        process <- TRUE
+      }else{
+        process <- FALSE
+      }
+    } else {
       process <- TRUE
-    }else{
-      process <- FALSE
     }
   }else{
     process <- TRUE
@@ -917,6 +977,9 @@ check_input <- function (mainPath, region, type, print = FALSE) {
   if (!type %in% c("raw","processed")) {
       stop("type must be 'raw' or 'processed'")
   }
+  if (!is.logical(print)) {
+    stop("print must be 'logical'")
+  }
   fileLst <- list.files(paste0(mainPath, "/", region, "/data"), recursive = TRUE)
   fileLst <- fileLst[!grepl("zToAccessMod", fileLst)]
   fileAv <- fileLst[grepl(paste0(type, "/.*(\\.tif|\\.shp)"), fileLst)]
@@ -953,7 +1016,7 @@ check_input <- function (mainPath, region, type, print = FALSE) {
   }
 }
 
-process_pop <- function (mainPath, region, border, epsg, mostRecent) {
+process_pop <- function (mainPath, region, border, epsg, mostRecent, defaultMethods, changeRes, newRes, popCorrection, gridRes) {
   message("\nProcessing population raster...")
   popFolder <- paste0(mainPath, "/", region, "/data/rPopulation")
   popFolders <- check_exists(popFolder, "raw")
@@ -968,57 +1031,93 @@ process_pop <- function (mainPath, region, border, epsg, mostRecent) {
   popFolder <- paste0(popFolder, "/", timeFolder, "/raw")
   multipleFilesMsg <- "Select the population raster that you would like to process."
   popRas <- load_layer(popFolder, multipleFilesMsg)[[1]]
-  popReprojMeth <- process_raster(popRas, border, epsg)
+  if (defaultMethods) {
+    projMeth <- "bilinear"
+  } else {
+    projMeth <- NULL
+  }
+  popReprojMeth <- process_raster(popRas, border, epsg, projMeth = projMeth)
   popReproj <- popReprojMeth[[1]]
   projMeth <- popReprojMeth[[2]]
-  write(paste0(Sys.time(), ": Population raster cropped, masked and projected (", epsg, ") using the '", projMeth, "' method - Input folder: ", timeFolder), file = logTxt, append = TRUE)
   if (is.null(popReproj)) {
     message("You exit the function.")
     stop_quietly()
   }
+  write(paste0(Sys.time(), ": Population raster cropped, masked and projected (", epsg, ") using the '", projMeth, "' method - Input folder: ", timeFolder), file = logTxt, append = TRUE)
   # Initial resolution
-  resInit <- terra::res(popReproj)
-  yn <- menu(c("YES", "NO"), title = paste("\nThe resolution of the population raster is", round(resInit[1], 2), "m. Would you like to modify it?"))
-  if (yn == 0) {
-    message("You exit the function.")
-    stop_quietly()
-  }else if (yn == 1) {
-    cat("\nEnter the new resolution (m)\n")
-    newRes <- readline(prompt = "Selection: ")
-    newRes <- as.numeric(newRes)
-    k <- 0
-    while ((is.na(newRes) | newRes < 0) & k < 3) {
-      message("Resolution must be a real positive number.")
-      k <- k + 1
+  if (is.null(changeRes)) {
+    resInit <- terra::res(popReproj)
+    yn <- menu(c("YES", "NO"), title = paste("\nThe resolution of the population raster is", round(resInit[1], 2), "m. Would you like to modify it?"))
+    if (yn == 0) {
+      message("You exit the function.")
+      stop_quietly()
+    }
+  } else if (changeRes) {
+    resInit <- terra::res(popReproj)
+    yn <- 1
+  } else {
+    yn <- 2
+  }
+  if (yn == 1) {
+    if (is.null(newRes)) {
+      cat("\nEnter the new resolution (m)\n")
       newRes <- readline(prompt = "Selection: ")
       newRes <- as.numeric(newRes)
-    }
-    if ((is.na(newRes) | newRes < 0) & k == 3) {
-      stop("Invalid resolution!")
+      k <- 0
+      while ((is.na(newRes) | newRes < 0) & k < 3) {
+        message("Resolution must be a real positive number.")
+        k <- k + 1
+        newRes <- readline(prompt = "Selection: ")
+        newRes <- as.numeric(newRes)
+      }
+      if ((is.na(newRes) | newRes < 0) & k == 3) {
+        stop("Invalid resolution!")
+      }
     }
     popReprojNew <- popReproj
     res(popReproj) <- newRes
-    popFinalMeth <- resample_raster(popReprojNew, popReproj, popRas)
+    if (defaultMethods) {
+      if (newRes[1] >= resInit[1]) {
+        resampMeth <- "sum"
+      } else {
+        resampMeth <- "bilinear"
+      }
+    } else {
+      resampMeth <- NULL
+    }
+    popFinalMeth <- resample_raster(popReprojNew, popReproj, popRas, resampMeth)
     popFinal <- popFinalMeth[[1]]
     resampMeth <- popFinalMeth[[2]]
     write(paste0(Sys.time(), ": Population raster resampled using the '", resampMeth, "' method - Input folder: ", timeFolder), file = logTxt, append = TRUE)
   }else{
     popFinal <- popReproj
   }
-  yn <- menu(c("YES", "NO"), title = "\nReprojecting a raster always causes some (small) distortion in the grid of a raster.\nWould you like to correct it (see 'help' for more details)?")
-  if (yn == 1) {
-    cat("\nEnter the resolution of the grid for the zonal statistic used for correcting the raster (m)\n")
-    gridRes <- readline(prompt = "Selection: ")
-    gridRes <- as.numeric(gridRes)
-    k <- 0
-    while ((is.na(gridRes) | gridRes < 0) & k < 3) {
-      message("Resultion must be a real positive number.")
-      k <- k + 1
+  if (is.null(popCorrection)) {
+    ynCorr <- menu(c("YES", "NO"), title = "\nReprojecting a raster always causes some (small) distortion in the grid of a raster.\nWould you like to correct it (see 'help' for more details)?")
+    if (ynCorr == 0) {
+      message("You exit the function.")
+      stop_quietly()
+    }
+  } else if (popCorrection) {
+    ynCorr <- 1
+  } else {
+    ynCorr <- 2
+  }
+  if (ynCorr == 1) {
+    if (is.null(gridRes)) {
+      cat("\nEnter the resolution of the grid for the zonal statistic used for correcting the population raster (m)\n")
       gridRes <- readline(prompt = "Selection: ")
       gridRes <- as.numeric(gridRes)
-    }
-    if ((is.na(gridRes) | gridRes < 0) & k == 3) {
-      stop("Invalid resolution!")
+      k <- 0
+      while ((is.na(gridRes) | gridRes < 0) & k < 3) {
+        message("Resultion must be a real positive number.")
+        k <- k + 1
+        gridRes <- readline(prompt = "Selection: ")
+        gridRes <- as.numeric(gridRes)
+      }
+      if ((is.na(gridRes) | gridRes < 0) & k == 3) {
+        stop("Invalid resolution!")
+      }
     }
     # Transform border for following process
     border <- st_transform(as(border, "sf"), crs(popFinal))
@@ -1043,19 +1142,60 @@ process_pop <- function (mainPath, region, border, epsg, mostRecent) {
     popOutFolder <- paste0(gsub("raw", "processed", popFolder), "/", outTimeFolder)
     dir.create(popOutFolder, recursive = TRUE)
     writeRaster(popOut, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
-    write(paste0(Sys.time(), ": Population raster corrected using a grid of ", gridRes, " x ", gridRes, " m cells - Output folder: ", outTimeFolder), file = logTxt, append = TRUE)
+    write(paste0(Sys.time(), ": Population raster corrected using a grid of ", gridRes, " x ", gridRes, " m cells"), file = logTxt, append = TRUE)
     cat("\nSumming values of the processed population raster per grid cell after correction\n")          
     popOutSum <- exact_extract(popOut, grd, "sum")
     message(paste0("Mean difference per grid cell (", gridRes, " x ", gridRes, ") ", "before correction: ", round(mean(popFinalSum - popSum), 2)))
     message(paste0("Mean difference per grid cell (", gridRes, " x ", gridRes, ") ", "after correction: ", round(mean(popOutSum - popSum), 2)))
     write(paste0(Sys.time(), ": Mean difference per grid cell before correction: ", round(mean(popFinalSum - popSum), 2), " - Output folder: ", outTimeFolder), file = logTxt, append = TRUE)
     write(paste0(Sys.time(), ": Mean difference per grid cell after correction: ", round(mean(popOutSum - popSum), 2), " - Output folder: ", outTimeFolder), file = logTxt, append = TRUE)
+    write(paste0(Sys.time(), ": Processed population raster saved - Output folder: ", outTimeFolder), file = logTxt, append = TRUE)
+  } else {
+    popOut <- popFinal
+    sysTime <- Sys.time()
+    outTimeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
+    popOutFolder <- paste0(gsub("raw", "processed", popFolder), "/", outTimeFolder)
+    dir.create(popOutFolder, recursive = TRUE)
+    writeRaster(popOut, paste0(popOutFolder, "/rPopulation.tif"), overwrite=TRUE)
+    write(paste0(Sys.time(), ": Processed population raster saved - Output folder: ", outTimeFolder), file = logTxt, append = TRUE)
   }
 }
   
  
 # Main function to process the inputs
-process_inputs <- function (mainPath, region, mostRecent) {
+process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess = FALSE, defaultMethods = FALSE, changeRes = NULL, newRes = NULL, popCorrection = NULL, gridRes = NULL) {
+  if (!is.character(mainPath)) {
+    stop("mainPath must be 'character'")
+  }
+  if (!is.character(region)) {
+    stop("region must be 'character'")
+  }
+  if (!is.logical(mostRecent)) {
+    stop("mostRecent must be 'logical'")
+  }
+  if (!is.logical(alwaysProcess)) {
+    stop("alwaysProcess must be 'logical'")
+  }
+  if (!is.null(changeRes)) {
+    if (!is.logical(changeRes)) {
+      stop("mostRecent must be NULL or 'logical'")
+    }
+  }
+  if (!is.null(newRes)) {
+    if (!is.numeric(newRes) & newRes > 0) {
+      stop("newRes must be NULL or a real positive number'")
+    }
+  }
+  if (!is.null(popCorrection)) {
+    if (!is.logical(popCorrection)) {
+      stop("popCorrection must be NULL or 'logical'")
+    }
+  }
+  if (!is.null(gridRes)) {
+    if (!is.numeric(gridRes) & newRes > 0) {
+      stop("gridRes must be NULL or a real positive number'")
+    }
+  }
   logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
   epsg <- get_param(mainPath = mainPath, region = region, "EPSG")
   epsg <- paste0("EPSG:", epsg)
@@ -1083,7 +1223,7 @@ process_inputs <- function (mainPath, region, mostRecent) {
       stop_quietly()
     }
     borderFolder <- paste0(borderPath, "/", timeFolder, "/raw")
-    toProcess <- already_processed(borderFolder)
+    toProcess <- already_processed(borderFolder, alwaysProcess)
     if (toProcess) {
       border <- load_layer(borderFolder)[[2]]
       border <- st_transform(border, crs(epsg))
@@ -1101,10 +1241,10 @@ process_inputs <- function (mainPath, region, mostRecent) {
     message("No more input to be processed!")
     stop_quietly()
   }
-  message("\nLoading processed boundaries shapefile...")
+  message("\nLoading processed boundary shapefile...")
   border <- get_boundaries(mainPath, region, "processed", mostRecent)
   if ("rPopulation" %in% selectedFolders) {
-    process_pop(mainPath, region, border, epsg)
+    process_pop(mainPath, region, border, epsg, mostRecent, defaultMethods, changeRes, newRes, popCorrection, gridRes)
     selectedFolders <- selectedFolders[!grepl("rPopulation", selectedFolders)]
   }
   # Check if other rasters to be processed
@@ -1118,7 +1258,7 @@ process_inputs <- function (mainPath, region, mostRecent) {
     popFolders <- check_exists(popFolder, "processed")
     if (is.null(popFolders)) {
       message("\nNo processed population raster is available.\nProcessing raw population raster...")
-      process_pop(mainPath, region, border, epsg)
+      process_pop(mainPath, region, border, epsg, mostRecent, defaultMethods, changeRes, newRes, popCorrection, gridRes)
       popFolders <- check_exists(popFolder, "processed")
     }
     message("\nLoading processed population raster...")
@@ -1144,7 +1284,7 @@ process_inputs <- function (mainPath, region, mostRecent) {
       stop_quietly()
     }
     inputFolder <- paste0(inputFolder, "/", timeFolder, "/raw")
-    processLayer <- already_processed(inputFolder)
+    processLayer <- already_processed(inputFolder, alwaysProcess)
     if (!processLayer) {
       if (i == length(selectedFolders)) {
         message("No more input to be processed!")
@@ -1156,11 +1296,23 @@ process_inputs <- function (mainPath, region, mostRecent) {
     multipleFilesMsg <- "Select the input that you want to process."
     inputLayers <- load_layer(inputFolder, multipleFilesMsg)
     if (!is.null(inputLayers[[1]])) {
-      rasReprojMeth <- process_raster(inputLayers[[1]], border, epsg)
+      if (defaultMethods) {
+        if (grepl("Land|land", selectedFolders[i])) {
+          projMeth <- "near"
+          resampMeth <- "near"
+        } else {
+          projMeth <- "bilinear"
+          resampMeth <- "bilinear"
+        }
+      } else {
+        projMeth <- NULL
+        resampMeth <- NULL
+      }
+      rasReprojMeth <- process_raster(inputLayers[[1]], border, epsg, projMeth)
       rasReproj <- rasReprojMeth[[1]]
       projMeth <- rasReprojMeth[[2]]
       write(paste0(Sys.time(), ": ", selectedFolders[i], " raster cropped, masked and projected using the '", projMeth, "' method - Input folder: ",timeFolder), file = logTxt, append = TRUE)
-      rasResampledMeth <- resample_raster(rasReproj, popOut, inputLayers[[1]])
+      rasResampledMeth <- resample_raster(rasReproj, popOut, inputLayers[[1]], resampMeth)
       rasResampled <- rasResampledMeth[[1]]
       resampMeth <- rasResampledMeth[[2]]
       write(paste0(Sys.time(), ": ", selectedFolders[i], " raster resampled using the '", resampMeth, "' method - Input folder: ",timeFolder), file = logTxt, append = TRUE)
@@ -1186,6 +1338,15 @@ process_inputs <- function (mainPath, region, mostRecent) {
 }
 
 compile_processed_data <- function (mainPath, region, mostRecent = TRUE) {
+  if (!is.character(mainPath)) {
+    stop("mainPath must be 'character'")
+  }
+  if (!is.character(region)) {
+    stop("region must be 'character'")
+  }
+  if (!is.logical(mostRecent)) {
+    stop("mostRecent must be 'logical'")
+  }
   folderLst <- list.dirs(paste0(mainPath, "/", region))
   inputsAv <- folderLst[grepl("processed", folderLst)]
   inputsAv <- unique(gsub("/[0-9]{14}/processed.*", "", gsub("^.*/data/", "", inputsAv)))
