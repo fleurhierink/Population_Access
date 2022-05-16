@@ -44,6 +44,10 @@ if (!require("crsuggest")) install.packages("crsuggest"); library("crsuggest")
 if (!require("countrycode")) install.packages("countrycode"); library("countrycode")
 # Remove accent for country names
 if (!require("stringi")) install.packages("stringi"); library("stringi")
+# Read Excel file
+if (!require("readxl")) install.packages("readxl"); library("readxl")
+# Large data table
+if (!require("data.table")) install.packages("data.table"); library("data.table")
 
 # Main parameters --------------------------------------------------------------------------
 # DEM
@@ -146,6 +150,281 @@ initiate_project <- function (mainPath) {
 }
 
 
+# Load files (e.g. health facilities)
+copy_file <- function (mainPath, region, file) {
+  if (!is.character(file)) {
+    stop("file must be 'character'")
+  }
+  if (!file.exists(file)) {
+    stop(paste(file, "does not exist."))
+  }
+  if (!is.character(mainPath)) {
+    stop("mainPath must be 'character'")
+  }
+  if (!is.character(region)) {
+    stop("region must be 'character'")
+  }
+  path <- paste0(mainPath, "/", region, "/data")
+  if (!dir.exists(paste0(mainPath, "/", region, "/data"))) {
+    stop(paste(path, "does not exist. Run the initiate_project function first or check the input parameters."))
+  }
+  folders <- gsub("^.*/data/", "", list.dirs(path, recursive = FALSE))
+  folders <- folders[!grepl("zToAccessMod", folders)]
+  fold <- menu(folders, title = "Which data would you like to load?")
+  folder <- list.dirs(path, recursive = FALSE)[grepl(folders[fold], list.dirs(path, recursive = FALSE))]
+  sysTime <- Sys.time()
+  timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
+  dir.create(paste0(folder, "/", timeFolder, "/raw"), recursive = TRUE)
+  folder <- paste0(folder, "/", timeFolder, "/raw")
+  file.copy(file, folder, overwrite = TRUE, copy.date = TRUE)
+  return(cat(paste(file, "copied to:", folder)))
+}
+
+filter_facilities <- function (tib, var, outFolder) {
+  categories <- pull(tib, var) %>% unique()
+  # If no NA
+  if (!any(is.na(categories))) {
+    # Only one category
+    if (length(categories) == 1){
+      cat(paste0("\nAll entries has '", categories, "' value for ", gsub("_", " ", names(var))," column."))
+      write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", categories), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
+      return(tib)
+    } else {
+      cat("\n")
+      gsub("_", " ", names(var)) %>% str_to_sentence() %>%  message()
+      nCat <- 1:length(categories)
+      indCat <- paste(paste0("\n", nCat, ": ", categories))
+      cat(indCat)
+      cat(paste("\n\nEnter all the indices that correspond to", gsub("_", " ", names(var)), "you want to keep.\nOn the same line separated by a space, or just skip to select all options.\n"))
+      selInd <- readline(prompt = "Selection: ")
+      selInd <- as.numeric(unlist(strsplit(x = selInd, split=" ")))
+      # All categories are selected
+      if (length(selInd) == 0){
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", ")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
+        return(tib)
+        # If invalid index, all categories are selected
+      } else if (!all(selInd %in% nCat)) {
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", ")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
+        return(NULL)
+      } else {
+        # Only selected categories
+        tib <- tib[tib[, var, drop = TRUE] %in% categories[selInd], ]
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", ")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
+        return(tib)
+      }
+    }
+  } else {
+    # If only NA
+    if (all(is.na(categories))) {
+      cat("\n")
+      message(paste("\n\nThere are ONLY missing values for", gsub("_", " ", names(var)),":"))
+      yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep all the health facilities (if not, the script will stop and no output will be produced)?"))
+      # We keep all the data and keep running the script
+      if (yn == 1) {
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+        return(tib)
+      }else{
+        message("You exited the script as a variable had only missing values. No output has been produced.")
+        stop_quietly()
+      }
+      # Some NA
+    } else {
+      categories <- categories[!is.na(categories)]
+      # Besides NA, only one category
+      if (length(categories) == 1){
+        message(paste("\n\nThere are missing values for", gsub("_", " ", names(var)), "for the following facilities:\n"))
+        print(tib[is.na(pull(tib, var)), c("external_id", "workspace_id", "date", "MoSD3", "HFNAME", var)])
+        yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep these health facilities?"))
+        # We keep the category and the NA
+        if (yn == 1) {
+          cat(paste0("Besides missing values, all entries has '", categories, "' value for ", gsub("_", " ", names(var))," column.\n"))
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, ", NA")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          return(tib)
+        } else {
+          # We only keep the category, discarding the NA
+          cat(paste0("Besides missing values, all entries has '", categories, "' value for ", gsub("_", " ", names(var))," column.\n"))
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", categories), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          tib <- tib[!is.na(tib[, var, drop = TRUE]), ]
+          return(tib)
+        }
+      }
+      # Besides NA, several categories
+      cat("\n")
+      gsub("_", " ", names(var)) %>% str_to_sentence() %>%  message()
+      nCat <- 1:length(categories)
+      indCat <- paste(paste0("\n", nCat, ": ", categories))
+      cat(indCat)
+      cat(paste("\n\nEnter all the indices that correspond to", gsub("_", " ", names(var)), "you want to keep.\nOn the same line separated by a space, or just skip to select all options.\n"))
+      selInd <- readline(prompt = "Selection: ")
+      selInd <- as.numeric(unlist(strsplit(x = selInd, split=" ")))
+      # All are selected
+      if (length(selInd == 0)) {
+        message(paste("\nThere are missing values for", gsub("_", " ", names(var)), "for the following facilities:\n"))
+        print(tib[is.na(pull(tib, var)), c("external_id", "workspace_id", "date", "MoSD3", "HFNAME", var)])
+        yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep these health facilities?"))
+        # All categories and NA are kept
+        if (yn == 1) {
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          return(tib)
+        } else {
+          # All categories but no NA
+          tib <- tib[!is.na(tib[, var, drop = TRUE]), ]
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", ")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          return(tib)
+        }
+        # Invalid index, all categories and NA are kept
+      } else if (!all(selInd %in% nCat)) {
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+        return(NULL)
+      } else {
+        message(paste("\nThere are missing values for", gsub("_", " ", names(var)), "for the following facilities:\n"))
+        print(tib[is.na(pull(tib, var)), c("external_id", "workspace_id", "date", "MoSD3", "HFNAME", var)])
+        yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep these health facilities?"))
+        # Selected categories and NA are kept
+        if (yn == 1) {
+          tib <- tib[tib[, var, drop = TRUE] %in% categories[selInd] | is.na(tib[, var, drop = TRUE]), ]
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          return(tib)
+        } else {
+          # Only selected categories
+          tib <- tib[tib[, var, drop = TRUE] %in% categories[selInd], ]
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", ")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          return(tib)
+        }
+      }
+    }
+  }
+}
+
+
+load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
+  if (!is.character(mainPath)) {
+    stop("mainPath must be 'character'")
+  }
+  if (!is.character(region)) {
+    stop("region must be 'character'")
+  }
+  pathFacilities <- paste0(mainPath, "/", region, "/data/vFacilities")
+  if (!dir.exists(paste0(pathFacilities))) {
+    stop(paste(pathFacilities, " does not exist. Run the initiate_project function."))
+  }
+  rawHF <- check_exists(pathFacilities, "raw", layer = FALSE, extension = extension)
+  if (is.null(rawHF)) {
+    stop("Raw health facilities' table is missing. Dowload it and run the 'copy_file function' or check the arguments.")
+  }
+  timeFolder <- choose_input(rawHF, "Excel table copied at", mostRecent)
+  if (is.null(timeFolder)) {
+    message("You exit the function.")
+    stop_quietly()
+  } else {
+    pathFacilities <- paste0(pathFacilities, "/", timeFolder, "/raw/")
+    files <- list.files(pathFacilities)[grepl(extension, list.files(pathFacilities))]
+    if (length(files) > 1) {
+      fileInd <- menu(files, "Select the index corresponding to the health facilities' table to be processed.")
+      file <- files[fileInd]
+    }else{
+      file <- files
+    }
+    sysTime <- Sys.time()
+    t0 <- gsub("-|[[:space:]]|\\:","", sysTime)
+    outFolder <- paste(gsub("raw", "processed", pathFacilities), t0, sep = "/")
+    dir.create(outFolder, recursive = TRUE)
+    fileConn <- file(paste(outFolder, "log.txt", sep = "/"))
+    writeLines(sysTime %>% as.character(), fileConn)
+    close(fileConn)
+    newTib <- read_excel(paste(pathFacilities, file, sep = "/"), skip = 1)
+    for (i in 1:length(variables)){
+      backupTib <- newTib
+      newTib <- filter_facilities(newTib, variables[i], outFolder)
+      if (is.null(newTib)) {
+        message("\nInvalid index ! All options were kept.")
+        newTib <- backupTib
+        next
+      }
+    }
+    write.csv(newTib, file = paste(outFolder, "healh_facilities.csv", sep = "/"))
+  }
+}
+
+create_hf_shapefile <- function (mainPath, region, mostRecentBoundaries) {
+  if (!is.character(mainPath)) {
+    stop("mainPath must be 'character'")
+  }
+  if (!is.character(region)) {
+    stop("region must be 'character'")
+  }
+  pathFacilities <- paste0(mainPath, "/", region, "/data/vFacilities")
+  if (!dir.exists(paste0(pathFacilities))) {
+    stop(paste(pathFacilities, " does not exist. Run the initiate_project function."))
+  }
+  message("\nLoading processed boundary shapefile...")
+  border <- get_boundaries(mainPath, region, type = "processed", mostRecent = mostRecentBoundaries)
+  hf <- check_exists(path = pathFacilities, type = "processed", layer = FALSE, extension = "csv")
+  timeFolder <- choose_input(hf)
+  if (is.null(timeFolder)) {
+    stop("Filtered health facilities' table is missing. Run the load_and_filter_hf function or check the arguments.")
+  }
+  if (is.null(timeFolder)) {
+    message("You exit the function.")
+    stop_quietly()
+  } else {
+    folderLst <- list.dirs(pathFacilities)
+    hfFolder <-   folderLst[grepl(paste0("processed/", timeFolder), folderLst)]
+    multipleFilesMsg <- "Select the boundary shapefile that you would like to process."
+    pathFacilities <- paste0(pathFacilities, "/", timeFolder, "/raw/")
+    files <- list.files(pathFacilities)[grepl(extension, list.files(pathFacilities))]
+  df <- read.csv(paste(dsn, sysTime, "healh_facilities.csv", sep = "/"))
+  xy <- data.frame(Lat = df[, "MoSDGPS_SQ002", drop = TRUE], Lon = df[, "MoSDGPS_SQ001", drop = TRUE])
+  if (nrow(xy[complete.cases(xy), ]) == 0) {
+    message(paste("Coordinates are not available! Add them manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
+    stop_quietly()
+  }
+  if (!all(complete.cases(xy))) {
+    message(paste("Coordinates are missing for the following facilities:"))
+    cat("\n")
+    dfNA <- df[!complete.cases(xy), ]
+    print(dfNA[, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
+    yn <- menu(c("Exit the script and add the coordinates manually in the CSV file", "Remove these HFs"), title = paste("\nWhat would you like to do?"))
+    if (yn == 1) {
+      message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
+      stop_quietly()
+    } else {
+      write.table(dfNA, paste(dsn, sysTime, "coordinates_NA.txt", sep = "/"))
+      message(paste("\nYou can access the removed HFs at:\n", paste(dsn, sysTime, "coordinates_NA.txt", sep = "/")))
+    }
+  }
+  pts <- SpatialPointsDataFrame(xy[complete.cases(xy), ], data = df[complete.cases(xy), ], proj4string = crs(border))
+  border <- gUnaryUnion(border)
+  inter <- gIntersects(border, pts, byid = TRUE)
+  interOutside <- FALSE
+  if (!all(inter[, 1])) {
+    interOutside <- TRUE
+    message("The follwing HFs are outside the region/country boundaries:")
+    print(df[!inter, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
+    yn <- menu(c("Exit the script and correct the coordinates manually in the CSV file", "Remove these HFs and create a HFs' shapefile"), title = paste("\nWhat would you like to do?"))
+    if (yn == 1) {
+      message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
+      stop_quietly()
+    }
+  }
+  shp <- st_as_sf(pts[inter[, 1], c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
+  yn <- menu(c("YES", "NO"), title = paste("\nWould you like to save a copy of the shapefile to the parent directory?\n", dsn))
+  if (yn == 1) {
+    cat("\nSaving the HFs' shapefile...")
+    st_write(shp, paste(dsn, "healh_facilities.shp", sep = "/"), append = FALSE)
+    st_write(shp, paste(dsn, sysTime, "healh_facilities.shp", sep = "/"), append = FALSE)
+  } else {
+    cat("\nSaving the HFs' shapefile...")
+    st_write(shp, paste(dsn, sysTime, "healh_facilities.shp", sep = "/"), append = FALSE)
+  }
+  if (interOutside) {
+    write.table(df[!inter[, 1]], paste(dsn, sysTime, "coordinate_outside.txt", sep = "/"))
+    message(paste("\nYou can access the removed HFs at:\n", paste(dsn, sysTime, "coordinates_outside.txt", sep = "/")))
+  }
+}
+
+
+
 # Access config.txt (created with initiate_project)
 # Used in other functions
 get_param <- function (mainPath, region, param) {
@@ -170,7 +449,7 @@ get_param <- function (mainPath, region, param) {
   return(param)
 }
 
-check_exists <- function (path, type) {
+check_exists <- function (path, type, layer = TRUE, extension = NULL) {
   if (!is.character(path)) {
     stop("path must be 'character'")
   }
@@ -180,11 +459,30 @@ check_exists <- function (path, type) {
   if (!type %in% c("raw", "processed")) {
     stop("type must be 'raw' or 'processed")
   }
+  if (!is.logical(layer)) {
+    stop("layer must be 'logical'")
+  }
+  if (!layer) {
+    if (is.null(extension)) {
+      stop("extension is required when 'layer' = FALSE")
+    }
+    if (!is.character(extension)) {
+      stop("extension must be 'character'")
+    }
+  }
   fileLst <- list.files(path, full.names = FALSE, recursive = TRUE)
   if (type == "raw"){
-    folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.tif|/", type, "/.*\\.shp"), fileLst)], 1, 14)
+    if (layer) {
+      folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.tif|/", type, "/.*\\.shp"), fileLst)], 1, 14)
+    } else {
+      folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.", extension), fileLst)], 1, 14)
+    }
   } else {
-    folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.tif|/", type, "/.*\\.shp"), fileLst)], 1 + 25, 14 + 25)
+    if (layer) {
+      folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.tif|/", type, "/.*\\.shp"), fileLst)], 1 + 25, 14 + 25)
+    } else {
+      folderLst <- substr(fileLst[grepl(paste0("/", type, "/.*\\.", extension), fileLst)], 1 + 25, 14 + 25)
+    }
   }
   if (length(folderLst) != 0) {
     # Only keep sys.time folders
@@ -295,7 +593,7 @@ get_boundaries <- function (mainPath, region, type, mostRecent) {
   if (!dir.exists(pathBorder)) {
     stop(paste(pathBorder,"does not exist. Run the initiate_project function first or check the input parameters."))
   }
-  folders <- check_exists(pathBorder, type)
+  folders <- check_exists(pathBorder, type, layer = TRUE)
   if (is.null(folders)) {
     return(NULL)
   } else {
@@ -373,7 +671,7 @@ set_projection <- function (mainPath, region, mostRecent = FALSE, alwaysSet = FA
   if (bestCRS) {
     epsg <- suggest_top_crs(border)
   } else {
-    suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 10, units = "m")}, error=function(e){NULL})
+    suggestedCRS <- tryCatch({suggest_crs(input = border, type = "projected", limit = 100, units = "m")}, error=function(e){NULL})
     if (is.null(suggestedCRS)) {
       cat("\nNo reference system can be suggested. Enter the EPSG code that you want to use for this project.")
       cat("\n ")
@@ -450,7 +748,7 @@ download_dem <- function (mainPath, region, alwaysDownload = FALSE, mostRecent =
   }
   # Check directory
   pathDEM <- paste0(mainPath, "/", region, "/data/rDEM")
-  folders <- check_exists(pathDEM, "raw")
+  folders <- check_exists(pathDEM, "raw", layer = TRUE)
   if (!is.null(folders)) {
     if (!alwaysDownload) {
       check_downloaded(folders)
@@ -554,7 +852,7 @@ download_population <- function (mainPath, region, alwaysDownload = FALSE) {
   }
   # Check directory
   pathPop <- paste0(mainPath, "/", region, "/data/rPopulation")
-  folders <- check_exists(pathPop, "raw")
+  folders <- check_exists(pathPop, "raw", layer = TRUE)
   if (!is.null(folders)) {
     if (!alwaysDownload) {
       check_downloaded(folders)
@@ -632,7 +930,7 @@ download_landcover <- function (mainPath, region, alwaysDownload = FALSE, mostRe
   }
   # Check directory
   pathLandcover <- paste0(mainPath, "/", region, "/data/rLandcover")
-  folders <- check_exists(pathLandcover, "raw")
+  folders <- check_exists(pathLandcover, "raw", layer = TRUE)
   if (!is.null(folders)) {
     if (!alwaysDownload) {
       check_downloaded(folders)
@@ -779,7 +1077,7 @@ download_osm <- function (x, mainPath, region, alwaysDownload = FALSE, countryNa
     }
   }
   pathFolder <- paste0(mainPath, "/", region, "/data/v", str_to_title(x))
-  folders <- check_exists(pathFolder, "raw")
+  folders <- check_exists(pathFolder, "raw", layer = TRUE)
   if (!is.null(folders)) {
     if (!alwaysDownload) {
       check_downloaded(folders)
@@ -1022,7 +1320,7 @@ process_pop <- function (mainPath, region, border, epsg, mostRecent, defaultMeth
   logTxt <- paste0(mainPath, "/", region, "/data/log.txt")
   message("\nProcessing population raster...")
   popFolder <- paste0(mainPath, "/", region, "/data/rPopulation")
-  popFolders <- check_exists(popFolder, "raw")
+  popFolders <- check_exists(popFolder, "raw", layer = TRUE)
   if (is.null(popFolders)) {
     stop("No input population raster available.")
   }
@@ -1216,10 +1514,10 @@ process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess 
   }
   # Border is required for any input processing; if wanted, first process this layer
   borderPath <- paste0(mainPath, "/", region, "/data/vBorders")
-  borderPr <- check_exists(borderPath, "processed")
+  borderPr <- check_exists(borderPath, "processed", layer = TRUE)
   # If we want to process border or if no processed shapefile exists (required for any other processing)
   if (("vBorders" %in% selectedFolders) | is.null(borderPr)) {
-    borderFolders <- check_exists(borderPath, "raw")
+    borderFolders <- check_exists(borderPath, "raw", layer = TRUE)
     if (is.null(borderFolders)) {
       stop("\nBoundary shapefile is required for input processing. Run the download_boundaries function.")
     }
@@ -1262,11 +1560,11 @@ process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess 
   }
   if (any(filesRasTrue)) {
     popFolder <- paste0(mainPath, "/", region, "/data/rPopulation")
-    popFolders <- check_exists(popFolder, "processed")
+    popFolders <- check_exists(popFolder, "processed", layer = TRUE)
     if (is.null(popFolders)) {
       message("\nNo processed population raster is available.\nProcessing raw population raster...")
       process_pop(mainPath, region, border, epsg, mostRecent, defaultMethods, changeRes, newRes, popCorrection, gridRes)
-      popFolders <- check_exists(popFolder, "processed")
+      popFolders <- check_exists(popFolder, "processed", layer = TRUE)
     }
     message("\nLoading processed population raster...")
     timeFolder <- choose_input(popFolders, "Population raster processed at:", mostRecent)
@@ -1284,7 +1582,7 @@ process_inputs <- function (mainPath, region, mostRecent = FALSE, alwaysProcess 
     cat("\n")
     message(selectedFolders[i])
     inputFolder <- paste0(mainPath, "/", region, "/data/", selectedFolders[i])
-    inputFolders <- check_exists(inputFolder, "raw")
+    inputFolders <- check_exists(inputFolder, "raw", layer = TRUE)
     timeFolder <- choose_input(inputFolders, paste(selectedFolders[i], "downloaded at:"), mostRecent)
     if (is.null(timeFolder)) {
       message("You exit the function.")
@@ -1366,7 +1664,7 @@ compile_processed_data <- function (mainPath, region, mostRecent = TRUE) {
   dir.create(outFolder, recursive = TRUE)
   for (i in 1:length(inputsAv)) {
     inputFolder <- paste0(mainPath, "/", region, "/data/", inputsAv[i])
-    inputFolders <- check_exists(inputFolder, "processed")
+    inputFolders <- check_exists(inputFolder, "processed", layer = TRUE)
     timeFolder <- choose_input(inputFolders, paste(inputsAv[i], "downloaded at:"), mostRecent) 
     inputFolder <- folderLst[grepl(paste0("processed/", timeFolder), folderLst)]
     files <- list.files(inputFolder, full.names = TRUE)
