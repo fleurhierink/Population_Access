@@ -39,7 +39,7 @@ for (i in 1:length(admin0$GID_0)) {
   wp_con <- read.csv(worldpop_constr[i])
   ls <- read.csv(landscan[i])
   
-  # first try a row bind
+  # bind all the different datasets together
   list_df <- list(gpw, ghs, wp_un, wp_con, ls, fb) 
   
   list_df1 <- lapply(list_df, function(x) setNames(x, gsub(".*\\_", "", names(x)))) # make sure that all lists have same name structure of columns
