@@ -151,7 +151,7 @@ initiate_project <- function (mainPath) {
 
 
 # Load files (e.g. health facilities)
-copy_file <- function (mainPath, region, file) {
+copy_input <- function (mainPath, region, file) {
   if (!is.character(file)) {
     stop("file must be 'character'")
   }
@@ -186,7 +186,7 @@ filter_facilities <- function (tib, var, outFolder) {
   if (!any(is.na(categories))) {
     # Only one category
     if (length(categories) == 1){
-      cat(paste0("\nAll entries has '", categories, "' value for ", gsub("_", " ", names(var))," column."))
+      cat(paste0("\nAll entries has '", categories, "' value for ", gsub("_", " ", names(var))," column.\n"))
       write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", categories), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
       return(tib)
     } else {
@@ -221,7 +221,7 @@ filter_facilities <- function (tib, var, outFolder) {
       yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep all the health facilities (if not, the script will stop and no output will be produced)?"))
       # We keep all the data and keep running the script
       if (yn == 1) {
-        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": NA"), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
         return(tib)
       }else{
         message("You exited the script as a variable had only missing values. No output has been produced.")
@@ -238,12 +238,12 @@ filter_facilities <- function (tib, var, outFolder) {
         # We keep the category and the NA
         if (yn == 1) {
           cat(paste0("Besides missing values, all entries has '", categories, "' value for ", gsub("_", " ", names(var))," column.\n"))
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, ", NA")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, ", NA")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           return(tib)
         } else {
           # We only keep the category, discarding the NA
           cat(paste0("Besides missing values, all entries has '", categories, "' value for ", gsub("_", " ", names(var))," column.\n"))
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", categories), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", categories), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           tib <- tib[!is.na(tib[, var, drop = TRUE]), ]
           return(tib)
         }
@@ -264,17 +264,17 @@ filter_facilities <- function (tib, var, outFolder) {
         yn <- menu(c("YES", "NO"), title = paste("\nDo you want to keep these health facilities?"))
         # All categories and NA are kept
         if (yn == 1) {
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           return(tib)
         } else {
           # All categories but no NA
           tib <- tib[!is.na(tib[, var, drop = TRUE]), ]
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", ")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", ")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           return(tib)
         }
         # Invalid index, all categories and NA are kept
       } else if (!all(selInd %in% nCat)) {
-        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+        write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories, collapse = ", "), ", NA"), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
         return(NULL)
       } else {
         message(paste("\nThere are missing values for", gsub("_", " ", names(var)), "for the following facilities:\n"))
@@ -283,12 +283,12 @@ filter_facilities <- function (tib, var, outFolder) {
         # Selected categories and NA are kept
         if (yn == 1) {
           tib <- tib[tib[, var, drop = TRUE] %in% categories[selInd] | is.na(tib[, var, drop = TRUE]), ]
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", "), ", NA"), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", "), ", NA"), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           return(tib)
         } else {
           # Only selected categories
           tib <- tib[tib[, var, drop = TRUE] %in% categories[selInd], ]
-          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", ")), file = paste(dsn, t0, "log.txt", sep = "/"), append = TRUE)
+          write(paste0(str_to_sentence(gsub("_", " ", names(var))), ": ", paste(categories[selInd], collapse = ", ")), file = paste(outFolder, "log.txt", sep = "/"), append = TRUE)
           return(tib)
         }
       }
@@ -297,7 +297,7 @@ filter_facilities <- function (tib, var, outFolder) {
 }
 
 
-load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
+filter_hf <- function (mainPath, region, extension, mostRecent) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
@@ -310,7 +310,7 @@ load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
   }
   rawHF <- check_exists(pathFacilities, "raw", layer = FALSE, extension = extension)
   if (is.null(rawHF)) {
-    stop("Raw health facilities' table is missing. Dowload it and run the 'copy_file function' or check the arguments.")
+    stop(paste0("Raw health facility table ('.", extension, "') is missing. You might have to run the copy_input function."))
   }
   timeFolder <- choose_input(rawHF, "Excel table copied at", mostRecent)
   if (is.null(timeFolder)) {
@@ -320,7 +320,7 @@ load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
     pathFacilities <- paste0(pathFacilities, "/", timeFolder, "/raw/")
     files <- list.files(pathFacilities)[grepl(extension, list.files(pathFacilities))]
     if (length(files) > 1) {
-      fileInd <- menu(files, "Select the index corresponding to the health facilities' table to be processed.")
+      fileInd <- menu(files, "Select the index corresponding to the health facility table to be processed.")
       file <- files[fileInd]
     }else{
       file <- files
@@ -333,6 +333,12 @@ load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
     writeLines(sysTime %>% as.character(), fileConn)
     close(fileConn)
     newTib <- read_excel(paste(pathFacilities, file, sep = "/"), skip = 1)
+    variables <- c(health_facility_types = "MoSD3", 
+                   facility_ownership = "MoSD7", 
+                   functionality_status = "HFFUNCT", 
+                   facility_status = "MoSD4",
+                   accesibility_status = "HFACC"
+    )
     for (i in 1:length(variables)){
       backupTib <- newTib
       newTib <- filter_facilities(newTib, variables[i], outFolder)
@@ -342,16 +348,34 @@ load_and_filter_hf <- function (mainPath, region, extension, mostRecent) {
         next
       }
     }
-    write.csv(newTib, file = paste(outFolder, "healh_facilities.csv", sep = "/"))
+    write.csv(newTib, file = paste(outFolder, "health_facilities.csv", sep = "/"))
   }
 }
 
-create_hf_shapefile <- function (mainPath, region, mostRecentBoundaries) {
+create_hf_shapefile <- function (mainPath, region, mostRecentBoundaries, mostRecentTable, WGS84 = TRUE, epsg = NULL, alwaysProcess = FALSE) {
   if (!is.character(mainPath)) {
     stop("mainPath must be 'character'")
   }
   if (!is.character(region)) {
     stop("region must be 'character'")
+  }
+  if (!is.logical(WGS84)) {
+    stop("WGS84 must be 'logical'")
+  }
+  if (WGS84) {
+    epsg <- "EPSG:4326"
+  } else {
+    if (is.null(epsg)) {
+      stop("If WGS84 = FALSE, epsg is required.")
+    } else {
+      validEPSG <- crs_sf$crs_code[!is.na(crs_sf$crs_units)]
+      if (!epsg %in% validEPSG) {
+        stop("EPSG not valid.")
+      }
+      else {
+        epsg <- paste0("EPSG:", epsg)
+      }
+    }
   }
   pathFacilities <- paste0(mainPath, "/", region, "/data/vFacilities")
   if (!dir.exists(paste0(pathFacilities))) {
@@ -359,67 +383,74 @@ create_hf_shapefile <- function (mainPath, region, mostRecentBoundaries) {
   }
   message("\nLoading processed boundary shapefile...")
   border <- get_boundaries(mainPath, region, type = "processed", mostRecent = mostRecentBoundaries)
-  hf <- check_exists(path = pathFacilities, type = "processed", layer = FALSE, extension = "csv")
-  timeFolder <- choose_input(hf)
-  if (is.null(timeFolder)) {
-    stop("Filtered health facilities' table is missing. Run the load_and_filter_hf function or check the arguments.")
+  if (is.null(border)) {
+    
   }
+  hf <- check_exists(path = pathFacilities, type = "processed", layer = FALSE, extension = "csv")
+  if (is.null(hf)) {
+    stop("No processed health facility table available. Run the filter_hf function.")
+  }
+  timeFolder <- choose_input(hf, "Health facility table filtered at:", mostRecentTable)
   if (is.null(timeFolder)) {
     message("You exit the function.")
-    stop_quietly()
+    stop_quietly()  
   } else {
     folderLst <- list.dirs(pathFacilities)
     hfFolder <-   folderLst[grepl(paste0("processed/", timeFolder), folderLst)]
-    multipleFilesMsg <- "Select the boundary shapefile that you would like to process."
-    pathFacilities <- paste0(pathFacilities, "/", timeFolder, "/raw/")
-    files <- list.files(pathFacilities)[grepl(extension, list.files(pathFacilities))]
-  df <- read.csv(paste(dsn, sysTime, "healh_facilities.csv", sep = "/"))
-  xy <- data.frame(Lat = df[, "MoSDGPS_SQ002", drop = TRUE], Lon = df[, "MoSDGPS_SQ001", drop = TRUE])
-  if (nrow(xy[complete.cases(xy), ]) == 0) {
-    message(paste("Coordinates are not available! Add them manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
-    stop_quietly()
-  }
-  if (!all(complete.cases(xy))) {
-    message(paste("Coordinates are missing for the following facilities:"))
-    cat("\n")
-    dfNA <- df[!complete.cases(xy), ]
-    print(dfNA[, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
-    yn <- menu(c("Exit the script and add the coordinates manually in the CSV file", "Remove these HFs"), title = paste("\nWhat would you like to do?"))
-    if (yn == 1) {
-      message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
-      stop_quietly()
-    } else {
-      write.table(dfNA, paste(dsn, sysTime, "coordinates_NA.txt", sep = "/"))
-      message(paste("\nYou can access the removed HFs at:\n", paste(dsn, sysTime, "coordinates_NA.txt", sep = "/")))
+    toProcess <- already_processed(hfFolder, alwaysProcess)
+    if (!toProcess) {
+      message("You exit the function.")
+      stop_quietly()  
     }
-  }
-  pts <- SpatialPointsDataFrame(xy[complete.cases(xy), ], data = df[complete.cases(xy), ], proj4string = crs(border))
-  border <- gUnaryUnion(border)
-  inter <- gIntersects(border, pts, byid = TRUE)
-  interOutside <- FALSE
-  if (!all(inter[, 1])) {
-    interOutside <- TRUE
-    message("The follwing HFs are outside the region/country boundaries:")
-    print(df[!inter, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
-    yn <- menu(c("Exit the script and correct the coordinates manually in the CSV file", "Remove these HFs and create a HFs' shapefile"), title = paste("\nWhat would you like to do?"))
-    if (yn == 1) {
-      message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(dsn, sysTime, "healh_facilities.csv", sep = "/")))
+    filesCsv <- list.files(hfFolder)[grepl("\\.csv$", list.files(hfFolder))]
+    multiMsg <- "Select the CSV table that you would like to process."
+    if (length(filesCsv) > 1) {
+      fileInd <- menu(filesCsv, multiMsg)
+      file <- filesShp[fileInd]
+    }else{
+      file <- filesCsv
+    }
+    df <- read.csv(paste(hfFolder, file, sep = "/"))
+    xy <- data.frame(Lat = df[, "MoSDGPS_SQ002", drop = TRUE], Lon = df[, "MoSDGPS_SQ001", drop = TRUE])
+    if (nrow(xy[complete.cases(xy), ]) == 0) {
+      message(paste("Coordinates are not available! Add them manually in the CSV file:\n", paste(hfFolder, file, sep = "/")))
       stop_quietly()
     }
-  }
-  shp <- st_as_sf(pts[inter[, 1], c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
-  yn <- menu(c("YES", "NO"), title = paste("\nWould you like to save a copy of the shapefile to the parent directory?\n", dsn))
-  if (yn == 1) {
+    if (!all(complete.cases(xy))) {
+      message(paste("Coordinates are missing for the following facilities:"))
+      cat("\n")
+      dfNA <- df[!complete.cases(xy), ]
+      print(dfNA[, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
+      yn <- menu(c("Exit the script and add the coordinates manually in the CSV file", "Remove these HFs"), title = paste("\nWhat would you like to do?"))
+      if (yn == 1) {
+        message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(hfFolder, file, sep = "/")))
+        stop_quietly()
+      } else {
+        write.table(dfNA, paste(hfFolder, "coordinates_NA.txt", sep = "/"))
+        message(paste("\nYou can access the removed HFs at:\n", paste(hfFolder, "coordinates_NA.txt", sep = "/")))
+      }
+    }
+    pts <- SpatialPointsDataFrame(coords = xy[complete.cases(xy), ], data = df[complete.cases(xy), ], proj4string = crs(epsg))
+    border <- gUnaryUnion(as(st_transform(border, crs(pts)), "Spatial"))
+    inter <- gIntersects(border, pts, byid = TRUE)
+    interOutside <- FALSE
+    if (!all(inter[, 1])) {
+      interOutside <- TRUE
+      message("The follwing HFs are outside the region/country boundaries:")
+      print(df[!inter, c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
+      yn <- menu(c("Exit the script and correct the coordinates manually in the CSV file", "Remove these HFs and create a HFs' shapefile"), title = paste("\nWhat would you like to do?"))
+      if (yn == 1) {
+        message(paste("You exited the script! Correct the coordinates manually in the CSV file:\n", paste(hfFolder, file, sep = "/")))
+        stop_quietly()
+      }
+    }
+    shp <- st_as_sf(pts[inter[, 1], c("external_id", "workspace_id", "date", "MoSD3", "HFNAME")])
     cat("\nSaving the HFs' shapefile...")
-    st_write(shp, paste(dsn, "healh_facilities.shp", sep = "/"), append = FALSE)
-    st_write(shp, paste(dsn, sysTime, "healh_facilities.shp", sep = "/"), append = FALSE)
-  } else {
-    cat("\nSaving the HFs' shapefile...")
-    st_write(shp, paste(dsn, sysTime, "healh_facilities.shp", sep = "/"), append = FALSE)
-  }
-  if (interOutside) {
-    write.table(df[!inter[, 1]], paste(dsn, sysTime, "coordinate_outside.txt", sep = "/"))
-    message(paste("\nYou can access the removed HFs at:\n", paste(dsn, sysTime, "coordinates_outside.txt", sep = "/")))
+    st_write(shp, paste(hfFolder, "health_facilities.shp", sep = "/"), append = FALSE)
+    if (interOutside) {
+      write.table(df[!inter[, 1]], paste(hfFolder, "coordinates_outside.txt", sep = "/"))
+      message(paste("\nYou can access the removed HFs at:\n", paste(hfFolder, "coordinates_outside.txt", sep = "/")))
+    }
   }
 }
 
@@ -564,6 +595,9 @@ download_boundaries <- function (mainPath, region, adminLevel, alwaysDownload = 
   if (is.null(border)) {
     stop("No available shapefile from geoBoundaries for this country/region. You might have to download it manually.\n\n")
   }
+  if (adminLevelTry < 0) {
+    adminLevelTry <- 0
+  }
   sysTime <- Sys.time()
   timeFolder <- gsub("-|[[:space:]]|\\:", "", sysTime)
   dir.create(paste0(pathBorder, "/", timeFolder, "/raw"), recursive = TRUE)
@@ -595,7 +629,7 @@ get_boundaries <- function (mainPath, region, type, mostRecent) {
   }
   folders <- check_exists(pathBorder, type, layer = TRUE)
   if (is.null(folders)) {
-    return(NULL)
+    stop(paste(str_to_title(type), "boundary shapefile is missing."))
   } else {
     if (type == "raw") {
       timeFolder <- choose_input(folders, "Shapefile downloaded at", mostRecent)
@@ -604,7 +638,7 @@ get_boundaries <- function (mainPath, region, type, mostRecent) {
         stop_quietly()
       } else {
         boundFolder <- paste0(pathBorder, "/", timeFolder, "/raw/")
-        multipleFilesMsg <- "Select the boundary shapefile that you would like to process."
+        multipleFilesMsg <- "Select the boundary shapefile that you would like to use."
         message(paste("Loading", type, "boundaries..."))
         border <- load_layer(boundFolder, multipleFilesMsg)[[2]]
         return(border)
@@ -617,7 +651,7 @@ get_boundaries <- function (mainPath, region, type, mostRecent) {
       } else {
         folderLst <- list.dirs(pathBorder)
         boundFolder <-   folderLst[grepl(paste0("processed/", timeFolder), folderLst)]
-        multipleFilesMsg <- "Select the boundary shapefile that you would like to process."
+        multipleFilesMsg <- "Select the boundary shapefile that you would like to use."
         message("\nLoading boundaries...")
         border <- load_layer(boundFolder, multipleFilesMsg)[[2]]
         return(border)
