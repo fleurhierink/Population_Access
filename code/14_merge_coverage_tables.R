@@ -16,13 +16,13 @@ library(purrr)
 # read in data sets
 # the administrative boundaries can be adapted to personal requirements. Here we used the GADM boundaries:
 # available from: https://gadm.org/data.html 
-facebook <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/facebook/", recursive = T, full.names = T))
-gpwv4 <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/gpwv4/", recursive = T, full.names = T))
-ghs_pop <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/ghs_pop/", recursive = T, full.names = T))
-worldpop_unconstr <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/worldpop_unconstr/", recursive = T, full.names = T))
-worldpop_constr <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/worldpop_constr/", recursive = T, full.names = T))
-landscan <- c(list.files("/Volumes/FLEUR_DATA/Baobab/tZonal_stats/dataset/landscan/", recursive = T, full.names = T))
-admin0 <- st_read("/Users/fleurhierink/Dropbox/pop_grid/r/data/raw/admin boundaries/Administrative boundaries/AFR_GADM_2018_Adm0.shp")
+facebook <- c(list.files("tZonal_stats/dataset/facebook/", recursive = T, full.names = T))
+gpwv4 <- c(list.files("tZonal_stats/dataset/gpwv4/", recursive = T, full.names = T))
+ghs_pop <- c(list.files("tZonal_stats/dataset/ghs_pop/", recursive = T, full.names = T))
+worldpop_unconstr <- c(list.files("tZonal_stats/dataset/worldpop_unconstr/", recursive = T, full.names = T))
+worldpop_constr <- c(list.files("tZonal_stats/dataset/worldpop_constr/", recursive = T, full.names = T))
+landscan <- c(list.files("tZonal_stats/dataset/landscan/", recursive = T, full.names = T))
+admin0 <- st_read("data/raw/admin boundaries/Administrative boundaries/AFR_GADM_2018_Adm0.shp")
 
 # create an empty list to store all the data in 
 list_outbound <- list()
@@ -61,7 +61,7 @@ for (i in 1:length(admin0$GID_0)) {
   
   list_outbound[[i]] <- outofbounds # create a list to calc the number of people falling out of boundaries
   
-  write.csv(total, paste0("data/processed/tZonal_stats/national/coverage_", admin0$GID_0[i], ".csv"))
+  write.csv(total, paste0("tZonal_stats/national/coverage_", admin0$GID_0[i], ".csv"))
 
   list_national[[i]] <- total # create a list to for each country
 }
@@ -70,5 +70,5 @@ for (i in 1:length(admin0$GID_0)) {
 continental <- do.call(rbind, list_national)
 outofbounds_df <- do.call(rbind, list_outbound)
 
-write.csv(continental, "/Volumes/FLEUR_DATA/Baobab/tZonal_stats/continental/coverage_continental.csv")
-write.csv(outofbounds_df, "/Volumes/FLEUR_DATA/Baobab/tZonal_stats/outside_boundaries/outside_boundaries.csv")
+write.csv(continental, "tZonal_stats/continental/coverage_continental.csv")
+write.csv(outofbounds_df, "tZonal_stats/outside_boundaries/outside_boundaries.csv")
