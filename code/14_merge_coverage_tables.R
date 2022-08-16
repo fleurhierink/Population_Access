@@ -72,3 +72,5 @@ outofbounds_df <- do.call(rbind, list_outbound)
 
 write.csv(continental, "tZonal_stats/continental/coverage_continental.csv")
 write.csv(outofbounds_df, "tZonal_stats/outside_boundaries/outside_boundaries.csv")
+                     
+ ## THE END ##
